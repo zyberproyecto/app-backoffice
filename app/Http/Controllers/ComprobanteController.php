@@ -14,7 +14,7 @@ class ComprobanteController extends Controller
      */
     public function index(Request $r)
     {
-        $tipoParam = $r->query('tipo');                       // 'inicial' | 'mensual' | null
+        $tipoParam = $r->query('tipo');                            // 'inicial' | 'mensual' | null
         $estadoUi  = strtolower($r->query('estado', 'pendiente')); // para la UI
 
         // Mapear tipo de la UI al almacenado en DB
@@ -33,15 +33,16 @@ class ComprobanteController extends Controller
             default     => 'pendiente',
         };
 
+        // *** Importante: usar SOLO columnas que existen en la tabla ***
         $select = [
             'id',
-            DB::raw('COALESCE(ci_usuario, ci) as ci_usuario'),
+            'ci_usuario',
             'tipo',
             'monto',
             'fecha_pago',
             'estado',
             'archivo',
-            DB::raw('COALESCE(nota_admin, motivo_rechazo) as nota_admin'),
+            DB::raw('COALESCE(nota_admin, motivo_rechazo, "") as nota_admin'),
             'created_at',
         ];
 
@@ -67,8 +68,8 @@ class ComprobanteController extends Controller
         return view('comprobantes.index', [
             'items'   => $items,
             'resumen' => $resumen,
-            'tipo'    => $tipoParam,   // mantenemos lo que vino en la URL para la UI
-            'estado'  => $estadoUi,    // idem
+            'tipo'    => $tipoParam, // lo que vino en la URL para la UI
+            'estado'  => $estadoUi,  // idem
         ]);
     }
 
@@ -78,7 +79,7 @@ class ComprobanteController extends Controller
     public function validar(Request $r, int $id)
     {
         $aff = DB::table('comprobantes')->where('id', $id)->update([
-            'estado'     => 'aprobado',   // <-- enum real en minúsculas
+            'estado'     => 'aprobado',   // enum real en minúsculas
             'updated_at' => now(),
         ]);
 
@@ -101,7 +102,7 @@ class ComprobanteController extends Controller
         $motivo = $r->input('motivo');
 
         $aff = DB::table('comprobantes')->where('id', $id)->update([
-            'estado'         => 'rechazado', // <-- enum real en minúsculas
+            'estado'         => 'rechazado', // enum real en minúsculas
             'motivo_rechazo' => $motivo,
             'updated_at'     => now(),
         ]);
@@ -116,4 +117,4 @@ class ComprobanteController extends Controller
         return redirect()->route('admin.comprobantes.index')
             ->with('success', $aff ? "Comprobante #{$id} rechazado." : "No se encontró el comprobante.");
     }
-}
+}  

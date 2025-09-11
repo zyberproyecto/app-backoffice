@@ -24,7 +24,7 @@
 
 <div class="card shadow-sm">
   <div class="table-responsive">
-    <table class="table table-hover mb-0 align-middle">
+    <table id="tabla-solicitudes" class="table table-hover mb-0 align-middle">
       <thead class="table-light">
         <tr>
           <th>#</th>
@@ -71,7 +71,7 @@
 {{-- Script inline mínimo para acciones (usa rutas WEB del backoffice + CSRF) --}}
 <script>
   (function() {
-    const table = document.currentScript.closest('.card').querySelector('table');
+    const table = document.getElementById('tabla-solicitudes');
     if (!table) return;
 
     // Token CSRF (desde Blade)
@@ -104,9 +104,11 @@
           headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': CSRF
+            'X-CSRF-TOKEN': CSRF,
+            'X-Requested-With': 'XMLHttpRequest'
           },
-          body: JSON.stringify({}) // el controlador no requiere body
+          credentials: 'same-origin',
+          body: JSON.stringify({})
         });
 
         const data = await resp.json().catch(()=>({}));

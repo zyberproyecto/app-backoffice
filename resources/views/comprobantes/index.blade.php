@@ -28,7 +28,7 @@
 
 <div class="card shadow-sm">
   <div class="table-responsive">
-    <table class="table table-hover mb-0 align-middle">
+    <table id="tabla-comprobantes" class="table table-hover mb-0 align-middle">
       <thead class="table-light">
         <tr>
           <th>ID</th>
@@ -90,7 +90,7 @@
 {{-- JS inline: usa rutas WEB del backoffice + CSRF --}}
 <script>
   (function(){
-    const table = document.currentScript.closest('.card').querySelector('table');
+    const table = document.getElementById('tabla-comprobantes');
     if (!table) return;
 
     const CSRF = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
@@ -121,17 +121,23 @@
           headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': CSRF
+            'X-CSRF-TOKEN': CSRF,
+            'X-Requested-With': 'XMLHttpRequest'
           },
+          credentials: 'same-origin',
           body: JSON.stringify(body)
         });
+
         const data = await resp.json().catch(() => ({}));
+
         if (!resp.ok || data.ok === false) {
           alert(data?.message || 'No se pudo completar la acción.');
           return;
         }
+
         // recargar manteniendo filtros
         window.location.reload();
+
       } catch (err) {
         console.error(err);
         alert('Error de red al ejecutar la acción.');
