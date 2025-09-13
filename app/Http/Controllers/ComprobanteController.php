@@ -9,31 +9,32 @@ class ComprobanteController extends Controller
 {
     /**
      * Vista de comprobantes con filtro por tipo (inicial|mensual) y estado.
-     * Estado admite: pendiente | aprobado | rechazado | todos
-     * NOTA: en DB los estados son minúsculas y el tipo inicial se guarda como 'aporte_inicial'.
+     * Estado: pendiente | aprobado | rechazado | todos
+     * En DB: tipo 'aporte_inicial' | 'mensual'; estados en minúsculas.
+     * Soporta paginado con ?pp=20 (rango 5..100).
      */
     public function index(Request $r)
     {
-        $tipoParam = $r->query('tipo');                            // 'inicial' | 'mensual' | null
-        $estadoUi  = strtolower($r->query('estado', 'pendiente')); // para la UI
+        $tipoParam = trim((string) $r->query('tipo'));               // 'inicial' | 'mensual' | null
+        $estadoUi  = strtolower($r->query('estado', 'pendiente'));   // para la UI
 
-        // Mapear tipo de la UI al almacenado en DB
+        // Tamaño de página (pp): entre 5 y 100, default 20
+        $perPage = max(5, min((int) $r->query('pp', 20), 100));
+
+        // Mapear tipo de UI -> DB
         $tipoDb = match ($tipoParam) {
             'inicial' => 'aporte_inicial',
             'mensual' => 'mensual',
             default   => null,
         };
 
-        // Normalizar estado a los valores reales del enum en DB
+        // Validar/normalizar estado
         $estadoDb = match ($estadoUi) {
-            'pendiente' => 'pendiente',
-            'aprobado'  => 'aprobado',
-            'rechazado' => 'rechazado',
-            'todos'     => 'todos',
-            default     => 'pendiente',
+            'pendiente', 'aprobado', 'rechazado' => $estadoUi,
+            'todos' => 'todos',
+            default => 'pendiente',
         };
 
-        // *** Importante: usar SOLO columnas que existen en la tabla ***
         $select = [
             'id',
             'ci_usuario',
@@ -47,74 +48,126 @@ class ComprobanteController extends Controller
         ];
 
         $q = DB::table('comprobantes')->select($select);
-
         if ($tipoDb) {
             $q->where('tipo', $tipoDb);
         }
-
         if ($estadoDb !== 'todos') {
             $q->where('estado', $estadoDb);
         }
 
-        $items = $q->orderByDesc('id')->get();
+        // 🔹 Paginado con query-string preservada (estado/tipo/pp)
+        $items = $q->orderByDesc('id')->paginate($perPage)->withQueryString();
 
-        // Resumen (siempre con los valores reales de DB)
+        // Resumen que respeta el filtro por tipo (si existe)
+        $countBy = function (string $estado) use ($tipoDb) {
+            $qb = DB::table('comprobantes')->where('estado', $estado);
+            if ($tipoDb) $qb->where('tipo', $tipoDb);
+            return $qb->count();
+        };
+
         $resumen = [
-            'pendientes' => DB::table('comprobantes')->where('estado', 'pendiente')->count(),
-            'aprobados'  => DB::table('comprobantes')->where('estado', 'aprobado')->count(),
-            'rechazados' => DB::table('comprobantes')->where('estado', 'rechazado')->count(),
+            'pendientes' => $countBy('pendiente'),
+            'aprobados'  => $countBy('aprobado'),
+            'rechazados' => $countBy('rechazado'),
         ];
+
+        // (Opcional) salida JSON paginada
+        if ($r->wantsJson() || $r->query('format') === 'json') {
+            return response()->json([
+                'ok'      => true,
+                'estado'  => $estadoUi,
+                'tipo'    => $tipoParam,
+                'resumen' => $resumen,
+                'items'   => $items->items(),
+                'meta'    => [
+                    'total'         => $items->total(),
+                    'per_page'      => $items->perPage(),
+                    'current_page'  => $items->currentPage(),
+                    'last_page'     => $items->lastPage(),
+                    'from'          => $items->firstItem(),
+                    'to'            => $items->lastItem(),
+                ],
+            ]);
+        }
 
         return view('comprobantes.index', [
             'items'   => $items,
             'resumen' => $resumen,
-            'tipo'    => $tipoParam, // lo que vino en la URL para la UI
-            'estado'  => $estadoUi,  // idem
+            'tipo'    => $tipoParam, // UI friendly
+            'estado'  => $estadoUi,
         ]);
     }
 
     /**
-     * Aprobar (validar) comprobante.
+     * Aprobar (validar) comprobante: solo desde estado 'pendiente'.
      */
     public function validar(Request $r, int $id)
     {
-        $aff = DB::table('comprobantes')->where('id', $id)->update([
-            'estado'     => 'aprobado',   // enum real en minúsculas
-            'updated_at' => now(),
-        ]);
+        $result = DB::transaction(function () use ($id) {
+            $row = DB::table('comprobantes')->lockForUpdate()->where('id', $id)->first();
+            if (!$row) {
+                return ['status' => 404, 'ok' => false, 'msg' => "No se encontró el comprobante #{$id}."];
+            }
+            if (strtolower((string) $row->estado) !== 'pendiente') {
+                return ['status' => 409, 'ok' => false, 'msg' => "El comprobante #{$id} no está pendiente."];
+            }
 
-        if ($r->wantsJson()) {
-            return response()->json(
-                ['ok' => (bool)$aff, 'message' => $aff ? "Comprobante #{$id} aprobado." : "No se encontró el comprobante."],
-                $aff ? 200 : 404
-            );
+            $aff = DB::table('comprobantes')->where('id', $id)->update([
+                'estado'     => 'aprobado',
+                // Futuro: 'aprobado_por_ci' => auth('admin')->user()?->ci_usuario,
+                'updated_at' => now(),
+            ]);
+
+            return ['status' => $aff ? 200 : 500, 'ok' => (bool) $aff, 'msg' => "Comprobante #{$id} aprobado."];
+        });
+
+        if ($r->wantsJson() || $r->query('format') === 'json') {
+            return response()->json(['ok' => $result['ok'], 'message' => $result['msg']], $result['status']);
         }
 
-        return redirect()->route('admin.comprobantes.index')
-            ->with('success', $aff ? "Comprobante #{$id} aprobado." : "No se encontró el comprobante.");
+        $flashType = $result['ok'] ? 'success' : 'error';
+        return redirect()->route('admin.comprobantes.index')->with($flashType, $result['msg']);
     }
 
     /**
-     * Rechazar comprobante.
+     * Rechazar comprobante: solo desde 'pendiente'.
+     * Requiere motivo (422 si falta en JSON/HTML).
      */
     public function rechazar(Request $r, int $id)
     {
-        $motivo = $r->input('motivo');
-
-        $aff = DB::table('comprobantes')->where('id', $id)->update([
-            'estado'         => 'rechazado', // enum real en minúsculas
-            'motivo_rechazo' => $motivo,
-            'updated_at'     => now(),
-        ]);
-
-        if ($r->wantsJson()) {
-            return response()->json(
-                ['ok' => (bool)$aff, 'message' => $aff ? "Comprobante #{$id} rechazado." : "No se encontró el comprobante."],
-                $aff ? 200 : 404
-            );
+        $motivo = trim((string) $r->input('motivo', ''));
+        if ($motivo === '') {
+            $msg = 'Debés indicar un motivo de rechazo.';
+            if ($r->wantsJson() || $r->query('format') === 'json') {
+                return response()->json(['ok' => false, 'message' => $msg], 422);
+            }
+            return back()->withInput()->with('error', $msg);
         }
 
-        return redirect()->route('admin.comprobantes.index')
-            ->with('success', $aff ? "Comprobante #{$id} rechazado." : "No se encontró el comprobante.");
+        $result = DB::transaction(function () use ($id, $motivo) {
+            $row = DB::table('comprobantes')->lockForUpdate()->where('id', $id)->first();
+            if (!$row) {
+                return ['status' => 404, 'ok' => false, 'msg' => "No se encontró el comprobante #{$id}."];
+            }
+            if (strtolower((string) $row->estado) !== 'pendiente') {
+                return ['status' => 409, 'ok' => false, 'msg' => "El comprobante #{$id} no está pendiente."];
+            }
+
+            $aff = DB::table('comprobantes')->where('id', $id)->update([
+                'estado'         => 'rechazado',
+                'motivo_rechazo' => $motivo,
+                // Futuro: 'rechazado_por_ci' => auth('admin')->user()?->ci_usuario,
+                'updated_at'     => now(),
+            ]);
+
+            return ['status' => $aff ? 200 : 500, 'ok' => (bool) $aff, 'msg' => "Comprobante #{$id} rechazado."];
+        });
+
+        if ($r->wantsJson() || $r->query('format') === 'json') {
+            return response()->json(['ok' => $result['ok'], 'message' => $result['msg']], $result['status']);
+        }
+
+        $flashType = $result['ok'] ? 'success' : 'error';
+        return redirect()->route('admin.comprobantes.index')->with($flashType, $result['msg']);
     }
-}  
+}
