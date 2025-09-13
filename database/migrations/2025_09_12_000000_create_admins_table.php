@@ -7,16 +7,13 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void {
         Schema::create('admins', function (Blueprint $t) {
-            $t->string('ci_usuario', 20)->primary();      
-            $t->string('primer_nombre', 50);
-            $t->string('segundo_nombre', 50)->nullable();
-            $t->string('primer_apellido', 50);
-            $t->string('segundo_apellido', 50)->nullable();
+            $t->id();
+            $t->string('ci_usuario', 20)->nullable()->unique(); // login por CI (opcional)
+            $t->string('nombre', 191)->nullable();
 
-            $t->string('email', 100)->unique();
-            $t->string('telefono', 30)->nullable();
+            $t->string('email', 191)->unique();
+            $t->string('password');
 
-            $t->string('password');                       // hash (bcrypt/argon)
             $t->enum('estado', ['activo','inactivo'])->default('activo');
             $t->rememberToken();
             $t->timestamps();
