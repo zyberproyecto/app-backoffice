@@ -2,34 +2,33 @@
 
 return [
 
-    // Usaremos Sanctum para tokens. El guard "web" puede quedar por compatibilidad.
     'defaults' => [
-        'guard' => 'web',
-        'passwords' => 'usuarios',
+        'guard' => 'admin',   // el panel usa este guard por defecto
+        'passwords' => 'admins',
     ],
 
     'guards' => [
-        'web' => [
-            'driver'   => 'session',
-            'provider' => 'usuarios',
+        'admin' => [
+            'driver' => 'session',
+            'provider' => 'admins',
         ],
-        // No definimos un guard "api" propio.
-        // Sanctum registra su guard para tokens (auth:sanctum).
+        // si más adelante agregás otros guards (web/api), los podés sumar acá
     ],
 
     'providers' => [
-        'usuarios' => [
+        'admins' => [
             'driver' => 'eloquent',
-            // Mejor usar FQCN como string para evitar problemas de autoload en config:
-            'model'  => App\Models\Usuario::class,
+            'model' => App\Models\Admin::class,
         ],
+        // otros providers...
     ],
 
     'passwords' => [
-        'usuarios' => [
-            'provider' => 'usuarios',
-            'table'    => 'password_reset_tokens',
-            'expire'   => 60,
+        'admins' => [
+            'provider' => 'admins',
+            // En Laravel 11, la tabla por defecto es 'password_reset_tokens'
+            'table' => 'password_reset_tokens',
+            'expire' => 60,
             'throttle' => 60,
         ],
     ],

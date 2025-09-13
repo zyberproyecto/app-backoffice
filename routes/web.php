@@ -1,38 +1,41 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Illuminate\Http\Request;
-
+use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\SolicitudController;
 use App\Http\Controllers\ComprobanteController;
 use App\Http\Controllers\HorasAdminController;
 use App\Http\Controllers\ExoneracionAdminController;
 
-Route::get('/', fn () => redirect()->route('dashboard'));
+/**
+ * Home → Dashboard
+ * (Si no hay sesión, el middleware 'admin' redirige a /login)
+ */
+Route::redirect('/', '/dashboard');
 
-/** SSO: la landing llega con ?token=... (vista que lo guarda y redirige) */
-Route::get('/sso', function () {
-    return view('sso'); // resources/views/sso.blade.php
-})->name('sso');
+// -------------------- AUTENTICACIÓN (Backoffice) --------------------
+Route::middleware('guest:admin')->group(function () {
+    Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 
-/** Bootstrap de sesión desde SSO (marca sso_started y rol en la sesión) */
-Route::post('/session/start', function (Request $r) {
-    session([
-        'sso_started' => true,
-        'sso_role'    => $r->input('role', 'admin'),
-    ]);
-    return ['ok' => true];
-})->name('session.start');
+    // Rate limit para evitar fuerza bruta (15 intentos / min)
+    Route::post('/login', [AuthController::class, 'login'])
+        ->name('login.post')
+        ->middleware('throttle:15,1');
+});
 
-/** Zona protegida */
-Route::middleware('admin.only')->group(function () {
+Route::post('/logout', [AuthController::class, 'logout'])
+    ->name('logout')
+    ->middleware('admin');
 
-    /** Dashboard */
+// -------------------- ZONA PROTEGIDA (guard: admin) --------------------
+Route::middleware('admin')->group(function () {
+
+    // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard');
 
-    /** Sección Admin */
+    // Sección Admin
     Route::prefix('admin')->name('admin.')->group(function () {
 
         // --- Solicitudes (vistas y acciones)
@@ -43,7 +46,7 @@ Route::middleware('admin.only')->group(function () {
         Route::put('/solicitudes/{id}/rechazar', [SolicitudController::class, 'rechazar'])
             ->name('solicitudes.rechazar');
 
-        // --- Comprobantes (vista y acciones)
+        // --- Comprobantes (vistas y acciones)
         Route::get('/comprobantes', [ComprobanteController::class, 'index'])
             ->name('comprobantes.index');
         Route::put('/comprobantes/{id}/validar',  [ComprobanteController::class, 'validar'])
@@ -51,7 +54,7 @@ Route::middleware('admin.only')->group(function () {
         Route::put('/comprobantes/{id}/rechazar', [ComprobanteController::class, 'rechazar'])
             ->name('comprobantes.rechazar');
 
-        // --- Horas (vista y acciones)
+        // --- Horas (vistas y acciones)
         Route::get('/horas', [HorasAdminController::class, 'index'])
             ->name('horas.index');
         Route::put('/horas/{id}/validar',  [HorasAdminController::class, 'validar'])
@@ -59,7 +62,7 @@ Route::middleware('admin.only')->group(function () {
         Route::put('/horas/{id}/rechazar', [HorasAdminController::class, 'rechazar'])
             ->name('horas.rechazar');
 
-        // --- Exoneraciones (vista y acciones)
+        // --- Exoneraciones (vistas y acciones)
         Route::get('/exoneraciones', [ExoneracionAdminController::class, 'index'])
             ->name('exoneraciones.index');
         Route::put('/exoneraciones/{id}/validar',  [ExoneracionAdminController::class, 'validar'])
@@ -67,9 +70,9 @@ Route::middleware('admin.only')->group(function () {
         Route::put('/exoneraciones/{id}/rechazar', [ExoneracionAdminController::class, 'rechazar'])
             ->name('exoneraciones.rechazar');
     });
-
-    /** Logout “visual” (tu vista borra el token del navegador y redirige) */
-    Route::post('/logout', function () {
-        return view('logout'); // resources/views/logout.blade.php
-    })->name('logout');
 });
+
+// Fallback (solo si hay sesión admin): redirige a dashboard
+Route::fallback(function () {
+    return redirect()->route('dashboard');
+})->middleware('admin');
