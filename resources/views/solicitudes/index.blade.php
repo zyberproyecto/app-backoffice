@@ -17,9 +17,9 @@
 <p class="mb-3">
   Filtrar:
   <a href="{{ route('admin.solicitudes.index', ['estado'=>'todos']) }}" class="{{ $estado==='todos' ? 'fw-bold' : '' }}">Todos</a> ·
-  <a href="{{ route('admin.solicitudes.index',['estado'=>'pendiente']) }}" class="{{ $estado==='pendiente' ? 'fw-bold' : '' }}">Pendientes ({{ $resumen['pendientes'] }})</a> ·
-  <a href="{{ route('admin.solicitudes.index',['estado'=>'aprobada']) }}"  class="{{ $estado==='aprobada'  ? 'fw-bold' : '' }}">Aprobadas ({{ $resumen['aprobadas'] }})</a> ·
-  <a href="{{ route('admin.solicitudes.index',['estado'=>'rechazada']) }}" class="{{ $estado==='rechazada' ? 'fw-bold' : '' }}">Rechazadas ({{ $resumen['rechazadas'] }})</a>
+  <a href="{{ route('admin.solicitudes.index',['estado'=>'pendiente']) }}" class="{{ $estado==='pendiente' ? 'fw-bold' : '' }}">Pendientes ({{ $resumen['pendientes'] ?? 0 }})</a> ·
+  <a href="{{ route('admin.solicitudes.index',['estado'=>'aprobado']) }}"  class="{{ $estado==='aprobado'  ? 'fw-bold' : '' }}">Aprobados ({{ $resumen['aprobados'] ?? 0 }})</a> ·
+  <a href="{{ route('admin.solicitudes.index',['estado'=>'rechazado']) }}" class="{{ $estado==='rechazado' ? 'fw-bold' : '' }}">Rechazados ({{ $resumen['rechazados'] ?? 0 }})</a>
 </p>
 
 <div class="card shadow-sm">
@@ -41,13 +41,17 @@
       </thead>
       <tbody>
         @forelse($items as $s)
+          @php
+            $menoresVal = strtolower((string)($s->menores_a_cargo ?? ''));
+            $hayMenores = in_array($menoresVal, ['1','si','sí','true','t','y','yes'], true);
+          @endphp
           <tr data-id="{{ $s->id }}">
             <td>{{ $s->id }}</td>
             <td>{{ $s->ci_usuario }}</td>
             <td>{{ $s->nombre }}</td>
             <td>{{ $s->email }}</td>
             <td>{{ $s->telefono }}</td>
-            <td>{{ (int)$s->menores_a_cargo > 0 ? 'Sí' : 'No' }}</td>
+            <td>{{ $hayMenores ? 'Sí' : 'No' }}</td>
             <td>{{ $s->dormitorios }}</td>
             <td class="text-wrap" style="max-width:260px;">{{ $s->comentarios ?: '—' }}</td>
             <td class="text-nowrap">{{ ucfirst($s->estado) }}</td>
@@ -74,10 +78,8 @@
     const table = document.getElementById('tabla-solicitudes');
     if (!table) return;
 
-    // Token CSRF (desde Blade)
     const CSRF = @json(csrf_token());
 
-    // Helpers: endpoints web del backoffice
     function urlAprobar(id)  { return `/admin/solicitudes/${id}/aprobar`; }
     function urlRechazar(id) { return `/admin/solicitudes/${id}/rechazar`; }
 
@@ -95,6 +97,9 @@
         : `¿Confirmás rechazar la solicitud #${id}?`;
 
       if (!confirm(confirmMsg)) return;
+
+      // evitar doble click
+      btn.disabled = true;
 
       const endpoint = action === 'aprobar' ? urlAprobar(id) : urlRechazar(id);
 
@@ -115,14 +120,16 @@
         if (!resp.ok || data.ok === false) {
           const msg = data?.message || 'No se pudo completar la acción.';
           alert(msg);
+          btn.disabled = false;
           return;
         }
 
-        // Éxito: recargar la página manteniendo el filtro actual
+        // Éxito: recargar manteniendo el filtro actual
         window.location.reload();
       } catch (err) {
         console.error(err);
         alert('Error de red al ejecutar la acción.');
+        btn.disabled = false;
       }
     });
   })();

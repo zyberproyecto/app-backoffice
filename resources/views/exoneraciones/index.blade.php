@@ -6,7 +6,7 @@
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div>
     <h1 class="h3 mb-1">Exoneraciones</h1>
-    <p class="text-muted mb-0">Solicitudes asociadas a semanas con horas < 21.</p>
+    <p class="text-muted mb-0">Solicitudes asociadas a semanas con horas &lt; 21.</p>
   </div>
 
   {{-- Filtro por CI --}}
@@ -87,13 +87,13 @@
   </div>
 </div>
 
-{{-- JS inline: rutas WEB + CSRF --}}
+{{-- JS inline: rutas WEB + CSRF + confirmación + anti doble click --}}
 <script>
   (function(){
     const table = document.getElementById('tabla-exoneraciones');
     if (!table) return;
 
-    const CSRF = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    const CSRF = @json(csrf_token());
 
     function urlValidar(id){  return `/admin/exoneraciones/${id}/validar`; }
     function urlRechazar(id){ return `/admin/exoneraciones/${id}/rechazar`; }
@@ -107,13 +107,21 @@
       const action = btn.getAttribute('data-action'); // validar | rechazar
       if (!id || !action) return;
 
+      const confirmMsg = action === 'validar'
+        ? `¿Confirmás aprobar la exoneración #${id}?`
+        : `¿Confirmás rechazar la exoneración #${id}?`;
+      if (!confirm(confirmMsg)) return;
+
       let body = {};
       if (action === 'rechazar') {
         const motivo = prompt('Motivo de rechazo (opcional):');
-        body.motivo = motivo || '';
+        body.motivo = (motivo || '').trim();
       }
 
       const endpoint = action === 'validar' ? urlValidar(id) : urlRechazar(id);
+
+      // anti doble click
+      btn.disabled = true;
 
       try {
         const resp = await fetch(endpoint, {
@@ -128,14 +136,20 @@
           body: JSON.stringify(body)
         });
         const data = await resp.json().catch(() => ({}));
+
         if (!resp.ok || data.ok === false) {
           alert(data?.message || 'No se pudo completar la acción.');
+          btn.disabled = false;
           return;
         }
+
+        // recargar (mantiene filtros de la URL actual)
         window.location.reload();
+
       } catch (err) {
         console.error(err);
         alert('Error de red al ejecutar la acción.');
+        btn.disabled = false;
       }
     });
   })();

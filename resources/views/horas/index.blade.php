@@ -93,13 +93,13 @@
   </div>
 </div>
 
-{{-- JS inline: usa rutas WEB del backoffice + CSRF --}}
+{{-- JS inline: rutas WEB del backoffice + CSRF + anti doble click --}}
 <script>
   (function(){
     const table = document.getElementById('tabla-horas');
     if (!table) return;
 
-    const CSRF = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    const CSRF = @json(csrf_token());
 
     function urlValidar(id){  return `/admin/horas/${id}/validar`; }
     function urlRechazar(id){ return `/admin/horas/${id}/rechazar`; }
@@ -113,13 +113,21 @@
       const action = btn.getAttribute('data-action'); // validar | rechazar
       if (!id || !action) return;
 
+      const confirmMsg = action === 'validar'
+        ? `¿Confirmás aprobar el registro de horas #${id}?`
+        : `¿Confirmás rechazar el registro de horas #${id}?`;
+      if (!confirm(confirmMsg)) return;
+
       let body = {};
       if (action === 'rechazar') {
         const motivo = prompt('Motivo de rechazo (opcional):');
-        body.motivo = motivo || '';
+        body.motivo = (motivo || '').trim();
       }
 
       const endpoint = action === 'validar' ? urlValidar(id) : urlRechazar(id);
+
+      // anti doble click
+      btn.disabled = true;
 
       try {
         const resp = await fetch(endpoint, {
@@ -134,14 +142,20 @@
           body: JSON.stringify(body)
         });
         const data = await resp.json().catch(() => ({}));
+
         if (!resp.ok || data.ok === false) {
           alert(data?.message || 'No se pudo completar la acción.');
+          btn.disabled = false;
           return;
         }
+
+        // recargar manteniendo filtros
         window.location.reload();
+
       } catch (err) {
         console.error(err);
         alert('Error de red al ejecutar la acción.');
+        btn.disabled = false;
       }
     });
   })();
