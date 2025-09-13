@@ -1,24 +1,50 @@
-*.log
+# SO / archivos basura
 .DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Entornos
 .env
-.env.backup
-.env.production
-.phpactor.json
-.phpunit.result.cache
+.env.*
+!.env.example
+
+# IDE / herramientas
 /.fleet
 /.idea
-/.nova
-/.phpunit.cache
 /.vscode
+/.nova
 /.zed
-/auth.json
+/.phpunit.cache
+/.phpunit.result.cache
+.phpactor.json
+.phpstorm.meta.php
+/_ide_helper*
+/_ide_helper_models*
+
+# Dependencias / builds
 /node_modules
+/vendor
+
+# Vite / assets
 /public/build
 /public/hot
-/public/storage
+
+# Storage y runtime (no versionar contenido generado)
+public/storage
 /storage/*.key
 /storage/pail
-/vendor
+/storage/logs/*
+/storage/framework/cache/**/*
+/storage/framework/sessions/**/*
+/storage/framework/views/**/*
+/bootstrap/cache/*.php
+
+# Homestead
 Homestead.json
 Homestead.yaml
-Thumbs.db

@@ -12,15 +12,22 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // CORS global
+        // Global (afecta web + api)
         $middleware->append(\Illuminate\Http\Middleware\HandleCors::class);
 
-        // 👇 Alias de middlewares de ruta (agrego admin.only y dejo admin por compatibilidad)
+        // Aliases de middlewares de RUTA
         $middleware->alias([
+            // Backoffice (sesión guard:admin)
             'admin.only' => \App\Http\Middleware\AdminOnly::class,
-            'admin'      => \App\Http\Middleware\AdminOnly::class, // opcional (compat)
-            'auth'       => \App\Http\Middleware\Authenticate::class,
-            'verified'   => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+            'admin'      => \App\Http\Middleware\AdminOnly::class, // alias corto
+
+            // Auth básicos
+            'auth'     => \App\Http\Middleware\Authenticate::class,
+            'guest'    => \Illuminate\Auth\Middleware\RedirectIfAuthenticated::class,
+            'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+
+            // Opcional: rate limiting para APIs
+            'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         ]);
 
         // Grupo WEB: sesión/cookies/CSRF
@@ -28,17 +35,18 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\EncryptCookies::class,
             \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
             \Illuminate\Session\Middleware\StartSession::class,
-            // \Illuminate\Session\Middleware\AuthenticateSession::class, // opcional
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
             \App\Http\Middleware\VerifyCsrfToken::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
         ]);
 
-        // Grupo API (liviano)
+        // Grupo API (stateless). Agregá throttle si querés.
         $middleware->group('api', [
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            // 'throttle:60,1',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
-    })->create();
+    })
+    ->create();
