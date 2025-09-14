@@ -1,152 +1,54 @@
 <?php
-
 namespace App\Http\Controllers;
 
+use App\Models\HoraTrabajo;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
+use Illuminate\Support\Carbon;
+use Illuminate\Database\QueryException;
 
 class HorasAdminController extends Controller
 {
-    /**
-     * GET /admin/horas?estado=pendiente|aprobado|rechazado|todos&ci=XXXX&per_page=25&page=1
-     * Listado para backoffice (HTML) o JSON si se solicita.
-     */
-    public function index(Request $r)
+    // POST /api/horas
+    public function store(Request $request)
     {
-        // Normalización de estado (UI)
-        $estado = Str::lower($r->query('estado', 'pendiente'));
-        $valid  = ['pendiente','aprobado','rechazado','todos'];
-        if (!in_array($estado, $valid, true)) {
-            $estado = 'pendiente';
-        }
+        $user = $request->user();
 
-        // CI normalizado (quita puntos/guiones/espacios)
-        $ciRaw = trim((string) $r->query('ci', ''));
-        $ci    = $ciRaw === '' ? '' : preg_replace('/[.\-\s]/', '', $ciRaw);
-
-        // Paginación (saneada)
-        $perPage = (int) $r->query('per_page', 25);
-        if ($perPage < 10)  $perPage = 10;
-        if ($perPage > 100) $perPage = 100;
-
-        // Select fijo según el schema de horas_trabajo
-        $select = [
-            'id',
-            'ci_usuario',
-            'semana',
-            'fecha',
-            'horas',
-            'actividad',
-            'descripcion',
-            'estado',
-            'created_at',
-        ];
-
-        $q = DB::table('horas_trabajo')->select($select);
-
-        if ($estado !== 'todos') {
-            $q->where('estado', $estado); // enum real: pendiente|aprobado|rechazado
-        }
-        if ($ci !== '') {
-            $q->where('ci_usuario', $ci);
-        }
-
-        $items = $q->orderByDesc('created_at')
-                   ->orderByDesc('id')
-                   ->simplePaginate($perPage)
-                   ->appends($r->only(['estado','ci','per_page']));
-
-        // Resumen (chips)
-        $resumen = [
-            'pendientes' => DB::table('horas_trabajo')->where('estado','pendiente')->count(),
-            'aprobadas'  => DB::table('horas_trabajo')->where('estado','aprobado')->count(),
-            'rechazadas' => DB::table('horas_trabajo')->where('estado','rechazado')->count(),
-        ];
-
-        // JSON opcional
-        if ($r->wantsJson() || $r->query('format') === 'json') {
-            return response()->json([
-                'ok'      => true,
-                'estado'  => $estado,
-                'ci'      => $ciRaw,
-                'resumen' => $resumen,
-                'meta'    => [
-                    'per_page' => $items->perPage(),
-                    'current'  => $items->currentPage(),
-                    'has_more' => $items->hasMorePages(),
-                ],
-                'items'   => $items->items(),
-            ]);
-        }
-
-        return view('horas.index', [
-            'items'   => $items,
-            'resumen' => $resumen,
-            'estado'  => $estado,
-            'ci'      => $ciRaw,
+        $data = $request->validate([
+            'semana_inicio'    => ['required','date'],
+            'horas_reportadas' => ['required','numeric','min:0','max:168'],
+            'motivo'           => ['nullable','string'],
         ]);
-    }
 
-    /**
-     * PUT /admin/horas/{id}/validar
-     * Solo desde estado 'pendiente'.
-     */
-    public function validar(Request $r, int $id)
-    {
-        $result = DB::transaction(function () use ($id) {
-            $row = DB::table('horas_trabajo')->lockForUpdate()->where('id', $id)->first();
-            if (!$row) {
-                return ['status' => 404, 'ok' => false, 'msg' => 'Registro no encontrado.'];
-            }
-            if (strtolower($row->estado) !== 'pendiente') {
-                return ['status' => 409, 'ok' => false, 'msg' => 'El registro no está pendiente.'];
-            }
+        $ini = Carbon::parse($data['semana_inicio'])->startOfWeek(Carbon::MONDAY);
+        $fin = (clone $ini)->endOfWeek(Carbon::SUNDAY);
 
-            $aff = DB::table('horas_trabajo')->where('id', $id)->update([
-                'estado'     => 'aprobado',
-                'updated_at' => now(),
+        try {
+            $row = HoraTrabajo::create([
+                'ci_usuario'       => $user->ci_usuario,
+                'semana_inicio'    => $ini->toDateString(),
+                'semana_fin'       => $fin->toDateString(),
+                'horas_reportadas' => $data['horas_reportadas'],
+                'motivo'           => $data['motivo'] ?? null,
+                'estado'           => HoraTrabajo::ESTADO_REPORTADO,
             ]);
-
-            return ['status' => $aff ? 200 : 500, 'ok' => (bool)$aff, 'msg' => 'Horas aprobadas.'];
-        });
-
-        if ($r->wantsJson() || $r->query('format') === 'json') {
-            return response()->json(['ok' => $result['ok'], 'message' => $result['msg']], $result['status']);
+        } catch (QueryException $e) {
+            return response()->json(['ok' => false, 'error' => 'Ya reportaste horas para esa semana.'], 422);
         }
 
-        $flashType = $result['ok'] ? 'success' : 'error';
-        return back()->with($flashType, $result['msg']);
+        return response()->json(['ok' => true, 'hora' => $row], 201);
     }
 
-    /**
-     * PUT /admin/horas/{id}/rechazar
-     * Solo desde estado 'pendiente'.
-     */
-    public function rechazar(Request $r, int $id)
+    // GET /api/horas/mias?desde=YYYY-MM-DD&hasta=YYYY-MM-DD
+    public function mias(Request $request)
     {
-        $result = DB::transaction(function () use ($id) {
-            $row = DB::table('horas_trabajo')->lockForUpdate()->where('id', $id)->first();
-            if (!$row) {
-                return ['status' => 404, 'ok' => false, 'msg' => 'Registro no encontrado.'];
-            }
-            if (strtolower($row->estado) !== 'pendiente') {
-                return ['status' => 409, 'ok' => false, 'msg' => 'El registro no está pendiente.'];
-            }
+        $user  = $request->user();
+        $desde = $request->query('desde');
+        $hasta = $request->query('hasta');
 
-            $aff = DB::table('horas_trabajo')->where('id', $id)->update([
-                'estado'     => 'rechazado',
-                'updated_at' => now(),
-            ]);
+        $q = HoraTrabajo::where('ci_usuario', $user->ci_usuario)->orderByDesc('semana_inicio');
+        if ($desde) $q->whereDate('semana_inicio', '>=', $desde);
+        if ($hasta) $q->whereDate('semana_inicio', '<=', $hasta);
 
-            return ['status' => $aff ? 200 : 500, 'ok' => (bool)$aff, 'msg' => 'Horas rechazadas.'];
-        });
-
-        if ($r->wantsJson() || $r->query('format') === 'json') {
-            return response()->json(['ok' => $result['ok'], 'message' => $result['msg']], $result['status']);
-        }
-
-        $flashType = $result['ok'] ? 'success' : 'error';
-        return back()->with($flashType, $result['msg']);
+        return response()->json(['ok' => true, 'items' => $q->get()]);
     }
 }

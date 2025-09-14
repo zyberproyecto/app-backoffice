@@ -2,271 +2,129 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Solicitud;
+use App\Models\Usuario;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 
 class SolicitudController extends Controller
 {
-    /**
-     * GET /admin/solicitudes?estado=pendiente|aprobado|rechazado|todos&per_page=25&page=1
-     * HTML por defecto; JSON si ?format=json o Accept: application/json.
-     */
-    public function index(Request $request)
+    // GET admin/solicitudes
+    public function index()
     {
-        // Estado normalizado
-        $estado = Str::lower($request->query('estado', 'pendiente'));
-        $valid  = ['pendiente','aprobado','rechazado','todos'];
-        if (!in_array($estado, $valid, true)) {
-            $estado = 'pendiente';
-        }
+        $solicitudes = Solicitud::where('estado', 'pendiente')
+            ->orderByDesc('created_at')
+            ->get();
 
-        // Paginación (saneada)
-        $perPage = (int) $request->query('per_page', 25);
-        if ($perPage < 10)  $perPage = 10;
-        if ($perPage > 100) $perPage = 100;
-
-        // Select tolerante a nombres de columnas desde la landing
-        $select = [
-            'id',
-            DB::raw('COALESCE(ci_usuario, ci) as ci_usuario'),
-            DB::raw('COALESCE(nombre, nombre_completo) as nombre'),
-            'email',
-            'telefono',
-            DB::raw('COALESCE(menores_a_cargo, menores_cargo) as menores_cargo'),
-            DB::raw('COALESCE(dormitorios, intereses) as dormitorios'),
-            DB::raw('COALESCE(comentarios, mensaje) as comentarios'),
-            'estado',
-            'created_at',
-        ];
-
-        $q = DB::table('solicitudes')->select($select);
-
-        if ($estado !== 'todos') {
-            $q->whereRaw('LOWER(estado) = ?', [$estado]);
-        }
-
-        $items = $q->orderByDesc('created_at')
-                   ->orderByDesc('id')
-                   ->paginate($perPage)
-                   ->appends($request->only(['estado','per_page']));
-
-        // Resumen por estado
-        $resumen = [
-            'pendientes' => DB::table('solicitudes')->whereRaw('LOWER(estado) = ?', ['pendiente'])->count(),
-            'aprobados'  => DB::table('solicitudes')->whereRaw('LOWER(estado) = ?', ['aprobado'])->count(),
-            'rechazados' => DB::table('solicitudes')->whereRaw('LOWER(estado) = ?', ['rechazado'])->count(),
-        ];
-
-        // JSON opcional
-        if ($request->wantsJson() || $request->query('format') === 'json') {
-            return response()->json([
-                'ok'      => true,
-                'estado'  => $estado,
-                'resumen' => $resumen,
-                'meta'    => [
-                    'per_page'   => $items->perPage(),
-                    'current'    => $items->currentPage(),
-                    'last_page'  => $items->lastPage(),
-                    'total'      => $items->total(),
-                    'has_more'   => $items->hasMorePages(),
-                ],
-                'items'   => $items->items(),
-            ]);
-        }
-
-        return view('solicitudes.index', [
-            'items'   => $items,
-            'resumen' => $resumen,
-            'estado'  => $estado,
-        ]);
+        // Si tu BO es API devuelve JSON; si es Blade, devuelve vista:
+        // return view('admin.solicitudes.index', compact('solicitudes'));
+        return response()->json(['ok' => true, 'solicitudes' => $solicitudes]);
     }
 
-    /**
-     * PUT /admin/solicitudes/{id}/aprobar
-     * Aprueba la solicitud y crea/actualiza usuario en BD (sin APIs).
-     */
-    public function aprobar(Request $request, int $id)
+    // PUT admin/solicitudes/{id}/aprobar
+    public function aprobar($id)
     {
-        return $this->aprobarYCriarUsuarioSiFalta($request, $id, 'aprobado', 'aprobado');
-    }
-
-    /**
-     * PUT /admin/solicitudes/{id}/rechazar
-     * Rechaza la solicitud y (si existe) marca el usuario correspondiente.
-     */
-    public function rechazar(Request $request, int $id)
-    {
-        return $this->cambiarEstadoSolicitudYUsuario($request, $id, 'rechazado', 'rechazado');
-    }
-
-    // ----------------- Helpers -----------------
-
-    private function aprobarYCriarUsuarioSiFalta(Request $request, int $id, string $estadoSolicitud, ?string $estadoUsuario)
-    {
-        return DB::transaction(function () use ($request, $id, $estadoSolicitud, $estadoUsuario) {
-            $sol = DB::table('solicitudes')->lockForUpdate()->where('id', $id)->first();
-            if (!$sol) {
-                return $this->respuesta($request, false, 'Solicitud no encontrada.', 404);
+        DB::transaction(function () use ($id) {
+            // Bloqueo la fila para evitar doble aprobación concurrente
+            $sol = Solicitud::lockForUpdate()->findOrFail($id);
+            if ($sol->estado === 'aprobado') {
+                return; // No hacemos nada si ya estaba aprobada
             }
 
-            $estadoActual = Str::lower($sol->estado ?? 'pendiente');
-            if ($estadoActual !== 'pendiente') {
-                return $this->respuesta($request, false, 'Solo se pueden cambiar solicitudes pendientes.', 409);
+            // 1) Normalizar CI a solo dígitos
+            $ci = $sol->ci ? preg_replace('/\D/', '', $sol->ci) : null;
+
+            // 2) Separar nombre/apellido muy básico desde nombre_completo
+            [$nombre, $apellido] = $this->splitNombre($sol->nombre_completo);
+
+            // 3) Buscar/crear usuario
+            $user = null;
+
+            if ($ci) {
+                $user = Usuario::find($ci);
             }
 
-            // 1) Cambiar estado de la solicitud (aprobado)
-            DB::table('solicitudes')->where('id', $id)->update([
-                'estado'     => $estadoSolicitud,
-                'updated_at' => now(),
-            ]);
-
-            // 2) Crear/actualizar usuario
-            $ci = $this->extraerCiUsuario($sol);
-            if ($estadoUsuario !== null && $ci) {
-                $existe = DB::table('usuarios')->where('ci_usuario', $ci)->first();
-
-                if ($existe) {
-                    DB::table('usuarios')
-                        ->where('ci_usuario', $ci)
-                        ->update([
-                            'estado_registro' => $estadoUsuario, // 'aprobado'
-                            'rol'             => DB::raw("COALESCE(rol, 'socio')"),
-                            'updated_at'      => now(),
-                        ]);
-                } else {
-                    $nombreCompleto = $this->prefer($sol, ['nombre', 'nombre_completo']);
-                    [$pn, $sn, $pa, $sa] = $this->splitNombre($nombreCompleto);
-
-                    $email    = $this->prefer($sol, ['email']);
-                    $telefono = $this->prefer($sol, ['telefono']);
-
-                    // Desambiguar email si ya existe
-                    if ($email && DB::table('usuarios')->where('email', $email)->exists()) {
-                        $email = $this->emailDesambiguado($email, $ci);
-                    }
-
-                    DB::table('usuarios')->insert([
-                        'ci_usuario'       => $ci,
-                        'primer_nombre'    => $pn,
-                        'segundo_nombre'   => $sn,
-                        'primer_apellido'  => $pa,
-                        'segundo_apellido' => $sa,
-                        'email'            => $email,
-                        'telefono'         => $telefono,
-                        'password'         => Hash::make($ci),  // temporal = CI
-                        'estado_registro'  => $estadoUsuario,    // 'aprobado'
-                        'rol'              => 'socio',
-                        'created_at'       => now(),
-                        'updated_at'       => now(),
-                    ]);
-                }
+            // Si no lo encontramos por CI, intento por email
+            if (!$user && $sol->email) {
+                $user = Usuario::where('email', $sol->email)->first();
             }
 
-            return $this->respuesta($request, true, "Solicitud #{$id} aprobada y usuario habilitado para login.");
+            if (!$user) {
+                // Crear nuevo usuario
+                $user = new Usuario();
+                $user->ci_usuario       = $ci ?: $this->fakeCi(); // fallback si no vino CI
+                $user->primer_nombre    = $nombre ?: 'Socio';
+                $user->primer_apellido  = $apellido ?: 'Zyber';
+                $user->email            = $sol->email ?? $this->fakeEmail();
+                $user->password         = Hash::make($this->passwordSugerida($nombre));
+                $user->rol              = 'socio';
+            } else {
+                // Completar datos faltantes si vinieron en la solicitud
+                if (!$user->primer_nombre && $nombre)   $user->primer_nombre = $nombre;
+                if (!$user->primer_apellido && $apellido) $user->primer_apellido = $apellido;
+                if (!$user->email && $sol->email)       $user->email = $sol->email;
+            }
+
+            // Habilitar login
+            $user->estado_registro = 'aprobado';
+            $user->save();
+
+            // 4) Marcar solicitud aprobada con trazabilidad
+            $sol->estado       = 'aprobado';
+            $sol->aprobado_por = auth('admin')->id() ?? auth()->id();
+            $sol->aprobado_at  = now();
+            $sol->save();
         });
+
+        // Si es Blade:
+        // return redirect()->route('admin.solicitudes.index')->with('ok','Solicitud aprobada y usuario habilitado.');
+        return response()->json(['ok' => true, 'message' => 'Solicitud aprobada y usuario habilitado.']);
     }
 
-    private function cambiarEstadoSolicitudYUsuario(Request $request, int $id, string $estadoSolicitud, ?string $estadoUsuario)
+    // PUT admin/solicitudes/{id}/rechazar
+    public function rechazar($id)
     {
-        if (!in_array($estadoSolicitud, ['aprobado', 'rechazado'], true)) {
-            return $this->respuesta($request, false, 'Estado destino inválido.');
+        $sol = Solicitud::findOrFail($id);
+        if ($sol->estado !== 'rechazado') {
+            $sol->estado       = 'rechazado';
+            $sol->aprobado_por = auth('admin')->id() ?? auth()->id();
+            $sol->aprobado_at  = now();
+            $sol->save();
         }
 
-        return DB::transaction(function () use ($request, $id, $estadoSolicitud, $estadoUsuario) {
-            $sol = DB::table('solicitudes')->lockForUpdate()->where('id', $id)->first();
-            if (!$sol) {
-                return $this->respuesta($request, false, 'Solicitud no encontrada.', 404);
-            }
-
-            $estadoActual = Str::lower($sol->estado ?? 'pendiente');
-            if ($estadoActual !== 'pendiente') {
-                return $this->respuesta($request, false, 'Solo se pueden cambiar solicitudes pendientes.', 409);
-            }
-
-            DB::table('solicitudes')->where('id', $id)->update([
-                'estado'     => $estadoSolicitud,
-                'updated_at' => now(),
-            ]);
-
-            if ($estadoUsuario !== null) {
-                $ci = $this->extraerCiUsuario($sol);
-                if ($ci) {
-                    DB::table('usuarios')
-                        ->where('ci_usuario', $ci)
-                        ->update([
-                            'estado_registro' => $estadoUsuario, // 'aprobado' | 'rechazado'
-                            'updated_at'      => now(),
-                        ]);
-                }
-            }
-
-            return $this->respuesta($request, true, "Solicitud #{$id} marcada como {$estadoSolicitud}.");
-        });
+        // Si es Blade:
+        // return redirect()->route('admin.solicitudes.index')->with('ok','Solicitud rechazada.');
+        return response()->json(['ok' => true, 'message' => 'Solicitud rechazada.']);
     }
 
-    // -------- utilitarios --------
-
-    private function extraerCiUsuario(object $solicitud): ?string
-    {
-        $raw = null;
-        if (!empty($solicitud->ci_usuario)) $raw = (string) $solicitud->ci_usuario;
-        elseif (!empty($solicitud->ci))     $raw = (string) $solicitud->ci;
-
-        if ($raw === null) return null;
-        return preg_replace('/[.\-\s]/', '', $raw); // normalizar CI
-    }
-
-    private function prefer(object $o, array $keys): ?string
-    {
-        foreach ($keys as $k) {
-            if (isset($o->{$k}) && trim((string) $o->{$k}) !== '') {
-                return trim((string) $o->{$k});
-            }
-        }
-        return null;
-    }
+    // ---- Helpers privados ----
 
     private function splitNombre(?string $nombreCompleto): array
     {
         $nombreCompleto = trim((string) $nombreCompleto);
-        if ($nombreCompleto === '') return [null, null, null, null];
+        if ($nombreCompleto === '') return [null, null];
 
-        $parts = preg_split('/\s+/', $nombreCompleto) ?: [];
-
-        $pNombre   = $parts[0] ?? null;
-        $sNombre   = $parts[1] ?? null;
-
-        $pApellido = null;
-        $sApellido = null;
-        if (count($parts) >= 3) {
-            $pApellido = $parts[count($parts) - 2] ?? null;
-            $sApellido = $parts[count($parts) - 1] ?? null;
-        }
-        return [$pNombre, $sNombre, $pApellido, $sApellido];
+        $partes = preg_split('/\s+/', $nombreCompleto, 2);
+        $nombre = $partes[0] ?? null;
+        $apellido = $partes[1] ?? null;
+        return [$nombre, $apellido];
     }
 
-    private function emailDesambiguado(string $email, string $ci): string
+    private function passwordSugerida(?string $nombre): string
     {
-        if (!str_contains($email, '@')) {
-            return "{$email}.{$ci}@example.local";
-        }
-        [$user, $dom] = explode('@', $email, 2);
-        if ($user === '') $user = 'user';
-        return "{$user}+{$ci}@{$dom}";
+        $base = strtolower(mb_substr($nombre ?: 'socio', 0, 3));
+        return ($base !== '' ? $base : 'socio') . '123'; // ej: val123
     }
 
-    private function respuesta(Request $request, bool $ok, string $msg, int $status = 200)
+    private function fakeCi(): string
     {
-        if ($request->wantsJson() || $request->query('format') === 'json') {
-            return response()->json(['ok' => $ok, 'message' => $msg], $status);
-        }
+        // Fallback SI Y SOLO SI no vino CI: timestamp recortado, evita colisión en dev.
+        return (string) now()->format('YmdHis');
+    }
 
-        $query = [];
-        if ($f = $request->query('estado')) $query['estado'] = $f;
-
-        return redirect()->route('admin.solicitudes.index', $query)
-            ->with($ok ? 'success' : 'error', $msg);
+    private function fakeEmail(): string
+    {
+        return 'sin-email-' . now()->format('YmdHis') . '@zyber.test';
     }
 }
