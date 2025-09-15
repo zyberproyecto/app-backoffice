@@ -1,4 +1,21 @@
 @extends('layout')
+
+@php
+    // Defaults para evitar "Undefined variable"
+    /** @var \Illuminate\Contracts\Pagination\Paginator|\Illuminate\Support\Collection|null $items */
+    $items  = $items  ?? collect();
+    $estado = $estado ?? request('estado', 'todas');
+
+    // ¿Está vacío?
+    $isEmpty = $items instanceof \Illuminate\Contracts\Pagination\Paginator
+        ? ($items->total() === 0)
+        : ($items instanceof \Illuminate\Support\Collection ? $items->isEmpty() : empty($items));
+
+    // ¿Hay paginación?
+    $hasPaginator = $items instanceof \Illuminate\Contracts\Pagination\Paginator
+                 || $items instanceof \Illuminate\Pagination\LengthAwarePaginator;
+@endphp
+
 @section('title','Perfiles de socios')
 
 @section('content')
@@ -32,7 +49,7 @@
 
   {{-- Tabla --}}
   <div class="bo-panel">
-    @if($items->count() === 0)
+    @if($isEmpty)
       <div class="bo-panel__body">No hay perfiles para mostrar.</div>
     @else
       <div style="overflow:auto;">
@@ -52,21 +69,30 @@
             @foreach($items as $row)
               <tr style="border-bottom:1px solid #eef2f7;">
                 <td style="padding:8px; font-weight:600;">{{ $row->ci_usuario }}</td>
-                <td style="padding:8px;">{{ $row->ocupacion }}</td>
-                <td style="padding:8px;">$ {{ number_format((float)$row->ingresos_nucleo_familiar, 2, ',', '.') }}</td>
-                <td style="padding:8px;">{{ $row->integrantes_familia }}</td>
+                <td style="padding:8px;">{{ $row->ocupacion ?? '—' }}</td>
                 <td style="padding:8px;">
+                  @php $m = $row->ingresos_nucleo_familiar ?? null; @endphp
+                  {{ is_null($m) ? '—' : ('$ '.number_format((float)$m, 2, ',', '.')) }}
+                </td>
+                <td style="padding:8px;">{{ $row->integrantes_familia ?? '—' }}</td>
+                <td style="padding:8px;">
+                  @php $st = strtolower($row->estado_revision ?? 'incompleto'); @endphp
                   <span style="padding:2px 8px; border-radius:999px; font-size:.85rem;
-                    @switch(strtolower($row->estado_revision))
+                    @switch($st)
                       @case('aprobado')  background:#ecfdf5;color:#065f46; @break
                       @case('rechazado') background:#fef2f2;color:#991b1b; @break
                       @default           background:#fff7ed;color:#9a3412;
                     @endswitch
                   ">
-                    {{ strtolower($row->estado_revision) }}
+                    {{ $st }}
                   </span>
                 </td>
-                <td style="padding:8px; color:var(--bo-muted);">{{ \Illuminate\Support\Carbon::parse($row->updated_at)->format('Y-m-d H:i') }}</td>
+                <td style="padding:8px; color:var(--bo-muted);">
+                  @php
+                    $upd = $row->updated_at ?? null;
+                  @endphp
+                  {{ $upd ? \Illuminate\Support\Carbon::parse($upd)->format('Y-m-d H:i') : '—' }}
+                </td>
                 <td style="padding:8px;">
                   <a href="{{ route('admin.perfiles.show', $row->ci_usuario) }}" class="bo-btn">Ver</a>
                 </td>
@@ -77,7 +103,9 @@
       </div>
 
       <div style="margin-top:12px;">
-        {{ $items->withQueryString()->links() }}
+        @if($hasPaginator)
+          {{ $items->withQueryString()->links() }}
+        @endif
       </div>
     @endif
   </div>
