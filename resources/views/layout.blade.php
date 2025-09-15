@@ -5,14 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>@yield('title', 'Backoffice — Cooperativa')</title>
 
-  {{-- CSRF para peticiones desde JS --}}
   <meta name="csrf-token" content="{{ csrf_token() }}">
 
-  {{-- Hook opcional por vista (por si querés inyectar CSS extra) --}}
+  {{-- Hook opcional por vista (CSS extra) --}}
   @yield('head')
 
-  {{-- CSS desde public/css --}}
-  <link rel="stylesheet" href="{{ asset('css/estilos.css') }}?v={{ @filemtime(public_path('css/estilos.css')) }}">
+  {{-- CSS principal --}}
+  <link rel="stylesheet" href="{{ asset('css/estilos.css') }}">
 </head>
 @php
   /** @var \App\Models\Admin|null $admin */
@@ -27,9 +26,10 @@
       </a>
     </div>
     @if($admin)
-      <nav class="d-flex align-items-center gap-3">
-        <span class="text-sm text-muted">Sesión: <strong>{{ $admin->nombre_completo ?? $admin->ci_usuario }}</strong></span>
-        {{-- Logout: POST /logout con CSRF --}}
+      <nav class="flex items-center gap-3">
+        <span class="bo-muted">
+          Sesión: <strong>{{ $admin->nombre_completo ?? $admin->ci_usuario }}</strong>
+        </span>
         <button type="button" id="logout" class="bo-btn bo-btn--ghost">Cerrar sesión</button>
       </nav>
     @endif
@@ -42,12 +42,14 @@
           <div>
             <div class="bo-nav__title">Socios</div>
             <a class="bo-nav__link" href="{{ route('admin.solicitudes.index') }}">Nuevos socios</a>
+            <a class="bo-nav__link" href="{{ route('admin.perfiles.index') }}">Perfiles de socios</a>
           </div>
 
           <div>
             <div class="bo-nav__title">Pagos</div>
-            <a class="bo-nav__link" href="{{ route('admin.comprobantes.index', ['tipo' => 'inicial']) }}">Comprobante inicial</a>
-            <a class="bo-nav__link" href="{{ route('admin.comprobantes.index', ['tipo' => 'mensual']) }}">Comprobantes mensuales</a>
+            <a class="bo-nav__link" href="{{ route('admin.comprobantes.index', ['tipo' => 'aporte_inicial']) }}">Comprobante inicial</a>
+            <a class="bo-nav__link" href="{{ route('admin.comprobantes.index', ['tipo' => 'aporte_mensual']) }}">Comprobantes mensuales</a>
+            <a class="bo-nav__link" href="{{ route('admin.comprobantes.index', ['tipo' => 'compensatorio']) }}">Compensatorios</a>
           </div>
 
           <div>
@@ -58,22 +60,25 @@
 
           <div>
             <div class="bo-nav__title">Obra</div>
-            <a class="bo-nav__link" href="{{ url('/admin/unidades') }}">Unidades</a>
+            <a class="bo-nav__link" href="{{ route('admin.unidades.index') }}">Unidades</a>
           </div>
         </nav>
       </aside>
     @endif
 
     <main class="bo-main">
-      {{-- Flash/messages globales --}}
+      {{-- Mensajes flash --}}
+      @if(session('ok'))
+        <div class="bo-alert bo-alert--success mb-2">{{ session('ok') }}</div>
+      @endif
       @if(session('success'))
-        <div class="alert alert-success">{{ session('success') }}</div>
+        <div class="bo-alert bo-alert--success mb-2">{{ session('success') }}</div>
       @endif
       @if(session('error'))
-        <div class="alert alert-danger">{{ session('error') }}</div>
+        <div class="bo-alert bo-alert--error mb-2">{{ session('error') }}</div>
       @endif
       @if ($errors->any())
-        <div class="alert alert-danger">
+        <div class="bo-alert bo-alert--error mb-2">
           {{ $errors->first() }}
         </div>
       @endif
@@ -82,13 +87,12 @@
     </main>
   </div>
 
-  {{-- Script mínimo para logout con CSRF --}}
+  {{-- Script mínimo para logout --}}
   @if($admin)
   <script>
     (function () {
       const btn = document.getElementById('logout');
       if (!btn) return;
-
       btn.addEventListener('click', function () {
         const form = document.createElement('form');
         form.method = 'POST';
@@ -107,7 +111,6 @@
   </script>
   @endif
 
-  {{-- Hook para scripts por página (si querés @push('scripts') en vistas) --}}
   @stack('scripts')
 </body>
 </html>
