@@ -12,35 +12,58 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Global (afecta web + api)
-        $middleware->append(\Illuminate\Http\Middleware\HandleCors::class);
 
-        // Aliases de middlewares de RUTA
-        $middleware->alias([
-            // Backoffice (sesión guard:admin)
-            'admin.only' => \App\Http\Middleware\AdminOnly::class,
-            'admin'      => \App\Http\Middleware\AdminOnly::class, // alias corto
+        /**
+         * Middleware GLOBAL (corre en web + api)
+         * Definimos el stack completo para asegurar orden consistente.
+         * Tip: si no tenés TrustHosts/TrustProxies/TrimStrings custom, dejalos comentados.
+         */
+        $middleware->use([
+            // \App\Http\Middleware\TrustHosts::class,
+            // \App\Http\Middleware\TrustProxies::class,
 
-            // Auth básicos
-            'auth'     => \App\Http\Middleware\Authenticate::class,
-            'guest'    => \Illuminate\Auth\Middleware\RedirectIfAuthenticated::class,
-            'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+            \Illuminate\Http\Middleware\HandleCors::class,
+            \Illuminate\Foundation\Http\Middleware\PreventRequestsDuringMaintenance::class,
+            \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
 
-            // Opcional: rate limiting para APIs
-            'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
+            // \App\Http\Middleware\TrimStrings::class,
+            \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
         ]);
 
-        // Grupo WEB: sesión/cookies/CSRF
+        /**
+         * Aliases de MIDDLEWARE DE RUTA
+         * (los usás en routes: ->middleware('admin'), ->middleware('guest:admin'), etc.)
+         */
+        $middleware->alias([
+            // Backoffice (guard: admin)
+            'admin'      => \App\Http\Middleware\AdminOnly::class,
+            'admin.only' => \App\Http\Middleware\AdminOnly::class, // alias extra si querés
+
+            // Auth básicos
+            'auth'       => \App\Http\Middleware\Authenticate::class,
+            'guest'      => \Illuminate\Auth\Middleware\RedirectIfAuthenticated::class,
+            'verified'   => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+
+            // Rate limiting (útil en API o rutas específicas)
+            'throttle'   => \Illuminate\Routing\Middleware\ThrottleRequests::class,
+        ]);
+
+        /**
+         * GRUPO WEB: sesión/cookies/CSRF/bindings
+         */
         $middleware->group('web', [
             \App\Http\Middleware\EncryptCookies::class,
             \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
             \Illuminate\Session\Middleware\StartSession::class,
+            // \Illuminate\Session\Middleware\AuthenticateSession::class, // opcional si usás "remember me" robusto
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
             \App\Http\Middleware\VerifyCsrfToken::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
         ]);
 
-        // Grupo API (stateless). Agregá throttle si querés.
+        /**
+         * GRUPO API (stateless). Agregá throttle si querés.
+         */
         $middleware->group('api', [
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             // 'throttle:60,1',
