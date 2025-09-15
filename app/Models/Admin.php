@@ -10,21 +10,14 @@ class Admin extends Authenticatable
     use Notifiable;
 
     protected $table = 'admins';
-    protected $primaryKey = 'ci_usuario';
-    public $incrementing = false;
-    protected $keyType = 'string';
 
     protected $fillable = [
+        'nombre_completo',
         'ci_usuario',
-        'primer_nombre','segundo_nombre',
-        'primer_apellido','segundo_apellido',
-        'email','telefono','password','estado',
+        'email',
+        'password',
+        'estado', // 'activo' | 'inactivo'
     ];
 
-    protected $hidden = ['password','remember_token'];
-
-    public function getNombreCompletoAttribute(): string
-    {
-        return trim("{$this->primer_nombre} {$this->segundo_nombre} {$this->primer_apellido} {$this->segundo_apellido}");
-    }
+    protected $hidden = ['password', 'remember_token'];
 }

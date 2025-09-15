@@ -11,6 +11,10 @@ class AuthController extends Controller
 {
     public function showLogin()
     {
+        // Si ya hay sesión admin, directo al dashboard
+        if (Auth::guard('admin')->check()) {
+            return redirect()->route('dashboard');
+        }
         return view('auth.login');
     }
 
@@ -36,21 +40,32 @@ class AuthController extends Controller
                 ->whereRaw('LOWER(email) = ?', [mb_strtolower($login, 'UTF-8')])
                 ->first();
         } else {
-            // Normalizar CI (quita puntos/guiones/espacios)
-            $ci = preg_replace('/[.\-\s]/', '', $login);
+            // Normalizar CI: dejar solo dígitos
+            $ci = preg_replace('/\D/', '', $login);
             $admin = Admin::query()
                 ->where('ci_usuario', $ci)
                 ->first();
         }
 
         if (!$admin) {
-            return back()->withErrors(['login' => 'Usuario no encontrado.'])->withInput();
+            return back()
+                ->withInput()
+                ->withErrors(['login' => 'Usuario no encontrado.'])
+                ->with('error', 'Usuario no encontrado.');
         }
+
         if (!Hash::check($pass, $admin->password)) {
-            return back()->withErrors(['login' => 'Contraseña incorrecta.'])->withInput();
+            return back()
+                ->withInput()
+                ->withErrors(['login' => 'Contraseña incorrecta.'])
+                ->with('error', 'Credenciales inválidas.');
         }
+
         if (($admin->estado ?? 'activo') !== 'activo') {
-            return back()->withErrors(['login' => 'Usuario inactivo.'])->withInput();
+            return back()
+                ->withInput()
+                ->withErrors(['login' => 'Usuario inactivo.'])
+                ->with('error', 'Usuario inactivo.');
         }
 
         // Abrir sesión del guard admin

@@ -1,18 +1,26 @@
 <?php
+
 namespace App\Models;
 
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Laravel\Sanctum\HasApiTokens;
-use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Model;
 
-class Usuario extends Authenticatable
+class Usuario extends Model
 {
-    use HasApiTokens, Notifiable;
-
     protected $table = 'usuarios';
     protected $primaryKey = 'ci_usuario';
-    public $incrementing = false;
-    protected $keyType = 'string';
+    public $incrementing  = false;
+    protected $keyType    = 'string';
+
+    protected $fillable = [
+        'ci_usuario',
+        'primer_nombre',
+        'primer_apellido',
+        'email',
+        'telefono',
+        'password',
+        'rol',              // 'socio'
+        'estado_registro',  // 'aprobado' | 'pendiente' | 'rechazado'
+    ];
 
     protected $hidden = ['password'];
 }

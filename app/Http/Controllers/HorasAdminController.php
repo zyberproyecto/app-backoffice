@@ -1,54 +1,100 @@
 <?php
+
 namespace App\Http\Controllers;
 
-use App\Models\HoraTrabajo;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
-use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class HorasAdminController extends Controller
 {
-    // POST /api/horas
-    public function store(Request $request)
+    // GET /admin/horas?estado=reportado|aprobado|rechazado|todas&ci=XXXXXXXX
+    public function index(Request $r)
     {
-        $user = $request->user();
+        $estado = strtolower($r->query('estado', 'reportado'));
+        $q = DB::table('horas_trabajo');
 
-        $data = $request->validate([
-            'semana_inicio'    => ['required','date'],
-            'horas_reportadas' => ['required','numeric','min:0','max:168'],
-            'motivo'           => ['nullable','string'],
-        ]);
-
-        $ini = Carbon::parse($data['semana_inicio'])->startOfWeek(Carbon::MONDAY);
-        $fin = (clone $ini)->endOfWeek(Carbon::SUNDAY);
-
-        try {
-            $row = HoraTrabajo::create([
-                'ci_usuario'       => $user->ci_usuario,
-                'semana_inicio'    => $ini->toDateString(),
-                'semana_fin'       => $fin->toDateString(),
-                'horas_reportadas' => $data['horas_reportadas'],
-                'motivo'           => $data['motivo'] ?? null,
-                'estado'           => HoraTrabajo::ESTADO_REPORTADO,
-            ]);
-        } catch (QueryException $e) {
-            return response()->json(['ok' => false, 'error' => 'Ya reportaste horas para esa semana.'], 422);
+        if ($estado !== 'todas') {
+            $q->where('estado', $estado);
         }
 
-        return response()->json(['ok' => true, 'hora' => $row], 201);
+        if ($ci = $r->query('ci')) {
+            $ci = preg_replace('/\D/', '', (string) $ci);
+            if ($ci !== '') {
+                $q->where('ci_usuario', $ci);
+            }
+        }
+
+        $items = $q->orderByDesc('id')->paginate(20)->appends($r->query());
+
+        return view('horas.index', compact('items', 'estado'));
     }
 
-    // GET /api/horas/mias?desde=YYYY-MM-DD&hasta=YYYY-MM-DD
-    public function mias(Request $request)
+    // GET /admin/horas/{id}
+    public function show($id)
     {
-        $user  = $request->user();
-        $desde = $request->query('desde');
-        $hasta = $request->query('hasta');
+        $row = DB::table('horas_trabajo')->where('id', $id)->first();
+        abort_if(!$row, 404);
 
-        $q = HoraTrabajo::where('ci_usuario', $user->ci_usuario)->orderByDesc('semana_inicio');
-        if ($desde) $q->whereDate('semana_inicio', '>=', $desde);
-        if ($hasta) $q->whereDate('semana_inicio', '<=', $hasta);
+        $exoneracion = DB::table('exoneraciones')
+            ->where('ci_usuario', $row->ci_usuario)
+            ->whereDate('semana_inicio', $row->semana_inicio)
+            ->first();
 
-        return response()->json(['ok' => true, 'items' => $q->get()]);
+        return view('horas.show', compact('row', 'exoneracion'));
+    }
+
+    // PUT /admin/horas/{id}/aprobar
+    public function aprobar($id)
+    {
+        $adminId = Auth::guard('admin')->id();
+
+        $ok = DB::transaction(function () use ($id, $adminId) {
+            $row = DB::table('horas_trabajo')->lockForUpdate()->where('id', $id)->first();
+            if (!$row) return false;
+            if (strtolower($row->estado) === 'aprobado') return true;
+
+            $data = ['estado' => 'aprobado', 'updated_at' => now()];
+            if (Schema::hasColumn('horas_trabajo', 'aprobado_por')) $data['aprobado_por'] = $adminId;
+            if (Schema::hasColumn('horas_trabajo', 'aprobado_at'))  $data['aprobado_at'] = now();
+
+            DB::table('horas_trabajo')->where('id', $id)->update($data);
+            return true;
+        });
+
+        return back()->with($ok ? 'ok' : 'error', $ok ? 'Horas aprobadas.' : 'No se pudo aprobar.');
+    }
+
+    // PUT /admin/horas/{id}/rechazar
+    public function rechazar($id)
+    {
+        $adminId = Auth::guard('admin')->id();
+
+        $ok = DB::transaction(function () use ($id, $adminId) {
+            $row = DB::table('horas_trabajo')->lockForUpdate()->where('id', $id)->first();
+            if (!$row) return false;
+            if (strtolower($row->estado) === 'rechazado') return true;
+
+            $data = ['estado' => 'rechazado', 'updated_at' => now()];
+            if (Schema::hasColumn('horas_trabajo', 'aprobado_por')) $data['aprobado_por'] = $adminId;
+            if (Schema::hasColumn('horas_trabajo', 'aprobado_at'))  $data['aprobado_at'] = now();
+
+            DB::table('horas_trabajo')->where('id', $id)->update($data);
+
+            // Si existía exoneración pendiente para esa semana, marcar como rechazada
+            DB::table('exoneraciones')
+                ->where('ci_usuario', $row->ci_usuario)
+                ->whereDate('semana_inicio', $row->semana_inicio)
+                ->where('estado', 'pendiente')
+                ->update([
+                    'estado'     => 'rechazada',
+                    'updated_at' => now(),
+                ]);
+
+            return true;
+        });
+
+        return back()->with($ok ? 'ok' : 'error', $ok ? 'Horas rechazadas y exoneración (si existía) marcada como rechazada.' : 'No se pudo rechazar.');
     }
 }

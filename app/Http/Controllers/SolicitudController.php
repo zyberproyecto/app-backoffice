@@ -7,124 +7,161 @@ use App\Models\Usuario;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class SolicitudController extends Controller
 {
-    // GET admin/solicitudes
+    // GET /admin/solicitudes
     public function index()
     {
-        $solicitudes = Solicitud::where('estado', 'pendiente')
+        $solicitudes = Solicitud::orderByRaw("FIELD(estado,'pendiente','aprobado','rechazado')")
             ->orderByDesc('created_at')
-            ->get();
+            ->paginate(20);
 
-        // Si tu BO es API devuelve JSON; si es Blade, devuelve vista:
-        // return view('admin.solicitudes.index', compact('solicitudes'));
-        return response()->json(['ok' => true, 'solicitudes' => $solicitudes]);
+        return view('solicitudes.index', compact('solicitudes'));
     }
 
-    // PUT admin/solicitudes/{id}/aprobar
-    public function aprobar($id)
+    // GET /admin/solicitudes/{id}
+    public function show($id)
     {
-        DB::transaction(function () use ($id) {
-            // Bloqueo la fila para evitar doble aprobación concurrente
+        $sol = Solicitud::findOrFail($id);
+        return view('solicitudes.show', compact('sol'));
+    }
+
+    // PUT /admin/solicitudes/{id}/aprobar
+    public function aprobar(Request $request, $id)
+    {
+        $adminId = auth()->id();
+
+        $res = DB::transaction(function () use ($id, $adminId, $request) {
             $sol = Solicitud::lockForUpdate()->findOrFail($id);
+
             if ($sol->estado === 'aprobado') {
-                return; // No hacemos nada si ya estaba aprobada
+                return ['ok'=>true,'msg'=>'La solicitud ya estaba aprobada.','temp_password'=>null,'usuario_ci'=>$sol->usuario_ci ?? null];
+            }
+            if ($sol->estado === 'rechazado') {
+                return ['ok'=>false,'msg'=>'La solicitud ya fue rechazada anteriormente.','temp_password'=>null];
             }
 
-            // 1) Normalizar CI a solo dígitos
-            $ci = $sol->ci ? preg_replace('/\D/', '', $sol->ci) : null;
+            // Normalizar CI (sólo dígitos)
+            $ci = $sol->ci ? preg_replace('/\D/','',$sol->ci) : null;
 
-            // 2) Separar nombre/apellido muy básico desde nombre_completo
+            // Partir nombre/apellido básico
             [$nombre, $apellido] = $this->splitNombre($sol->nombre_completo);
 
-            // 3) Buscar/crear usuario
+            // Buscar usuario por CI o email
             $user = null;
+            if ($ci) $user = Usuario::where('ci_usuario', $ci)->first();
+            if (!$user && $sol->email) $user = Usuario::where('email',$sol->email)->first();
 
-            if ($ci) {
-                $user = Usuario::find($ci);
-            }
-
-            // Si no lo encontramos por CI, intento por email
-            if (!$user && $sol->email) {
-                $user = Usuario::where('email', $sol->email)->first();
-            }
-
+            $tempPassword = null;
             if (!$user) {
-                // Crear nuevo usuario
+                $tempPassword = $this->passwordFuerte($nombre);
                 $user = new Usuario();
-                $user->ci_usuario       = $ci ?: $this->fakeCi(); // fallback si no vino CI
-                $user->primer_nombre    = $nombre ?: 'Socio';
-                $user->primer_apellido  = $apellido ?: 'Zyber';
-                $user->email            = $sol->email ?? $this->fakeEmail();
-                $user->password         = Hash::make($this->passwordSugerida($nombre));
-                $user->rol              = 'socio';
+                $user->ci_usuario      = $ci ?: $this->fakeCi();
+                $user->primer_nombre   = $nombre ?: 'Socio';
+                $user->primer_apellido = $apellido ?: 'Zyber';
+                $user->email           = $sol->email ?: $this->fakeEmail();
+                $user->telefono        = $sol->telefono ?? $user->telefono;
+                $user->password        = Hash::make($tempPassword);
+                $user->rol             = $user->rol ?: 'socio';
             } else {
-                // Completar datos faltantes si vinieron en la solicitud
-                if (!$user->primer_nombre && $nombre)   $user->primer_nombre = $nombre;
+                if (!$user->primer_nombre && $nombre)     $user->primer_nombre = $nombre;
                 if (!$user->primer_apellido && $apellido) $user->primer_apellido = $apellido;
-                if (!$user->email && $sol->email)       $user->email = $sol->email;
+                if (!$user->email && $sol->email)         $user->email = $sol->email;
+                if (!$user->telefono && $sol->telefono)   $user->telefono = $sol->telefono;
+                if (!$user->password) {
+                    $tempPassword = $this->passwordFuerte($nombre);
+                    $user->password = Hash::make($tempPassword);
+                }
+                if (!$user->rol) $user->rol = 'socio';
             }
 
-            // Habilitar login
             $user->estado_registro = 'aprobado';
             $user->save();
 
-            // 4) Marcar solicitud aprobada con trazabilidad
+            if (Schema::hasColumn('solicitudes','usuario_ci')) {
+                $sol->usuario_ci = $user->ci_usuario;
+            }
+
             $sol->estado       = 'aprobado';
-            $sol->aprobado_por = auth('admin')->id() ?? auth()->id();
+            $sol->aprobado_por = $adminId;
             $sol->aprobado_at  = now();
             $sol->save();
+
+            // (Opcional) Asignar unidad si vino en el form
+            if ($request->filled('unidad_id') && Schema::hasTable('usuario_unidad')) {
+                DB::table('usuario_unidad')->updateOrInsert(
+                    ['ci_usuario'=>$user->ci_usuario,'unidad_id'=>$request->unidad_id],
+                    ['created_at'=>now(),'updated_at'=>now()]
+                );
+            }
+
+            return ['ok'=>true,'msg'=>'Solicitud aprobada y usuario habilitado.','temp_password'=>$tempPassword,'usuario_ci'=>$user->ci_usuario];
         });
 
-        // Si es Blade:
-        // return redirect()->route('admin.solicitudes.index')->with('ok','Solicitud aprobada y usuario habilitado.');
-        return response()->json(['ok' => true, 'message' => 'Solicitud aprobada y usuario habilitado.']);
+        return redirect()
+            ->route('admin.solicitudes.show', $id)
+            ->with($res['ok'] ? 'ok' : 'error', $res['msg'])
+            ->with('temp_password', $res['temp_password'])
+            ->with('usuario_ci', $res['usuario_ci'] ?? null);
     }
 
-    // PUT admin/solicitudes/{id}/rechazar
-    public function rechazar($id)
+    // PUT /admin/solicitudes/{id}/rechazar
+    public function rechazar(Request $request, $id)
     {
-        $sol = Solicitud::findOrFail($id);
-        if ($sol->estado !== 'rechazado') {
-            $sol->estado       = 'rechazado';
-            $sol->aprobado_por = auth('admin')->id() ?? auth()->id();
-            $sol->aprobado_at  = now();
-            $sol->save();
-        }
+        $adminId = auth()->id();
 
-        // Si es Blade:
-        // return redirect()->route('admin.solicitudes.index')->with('ok','Solicitud rechazada.');
-        return response()->json(['ok' => true, 'message' => 'Solicitud rechazada.']);
+        $res = DB::transaction(function () use ($id, $adminId, $request) {
+            $sol = Solicitud::lockForUpdate()->findOrFail($id);
+
+            if ($sol->estado === 'aprobado') {
+                return ['ok'=>false,'msg'=>'No se puede rechazar: ya está aprobada.'];
+            }
+            if ($sol->estado === 'rechazado') {
+                return ['ok'=>true,'msg'=>'La solicitud ya estaba rechazada.'];
+            }
+
+            $sol->estado       = 'rechazado';
+            $sol->aprobado_por = $adminId;
+            $sol->aprobado_at  = now();
+
+            if (Schema::hasColumn('solicitudes','nota_admin') && $request->filled('nota')) {
+                $sol->nota_admin = $request->input('nota');
+            }
+
+            $sol->save();
+            return ['ok'=>true,'msg'=>'Solicitud rechazada.'];
+        });
+
+        return redirect()
+            ->route('admin.solicitudes.show', $id)
+            ->with($res['ok'] ? 'ok' : 'error', $res['msg']);
     }
 
-    // ---- Helpers privados ----
-
+    // ==== Helpers ====
     private function splitNombre(?string $nombreCompleto): array
     {
-        $nombreCompleto = trim((string) $nombreCompleto);
-        if ($nombreCompleto === '') return [null, null];
-
+        $nombreCompleto = trim((string)$nombreCompleto);
+        if ($nombreCompleto === '') return [null,null];
         $partes = preg_split('/\s+/', $nombreCompleto, 2);
-        $nombre = $partes[0] ?? null;
-        $apellido = $partes[1] ?? null;
-        return [$nombre, $apellido];
+        return [$partes[0] ?? null, $partes[1] ?? null];
     }
 
-    private function passwordSugerida(?string $nombre): string
+    private function passwordFuerte(?string $nombre): string
     {
-        $base = strtolower(mb_substr($nombre ?: 'socio', 0, 3));
-        return ($base !== '' ? $base : 'socio') . '123'; // ej: val123
+        $pref = $nombre ? ucfirst(mb_substr(preg_replace('/\W+/u','',$nombre),0,3)) : 'Soc';
+        return $pref.'-'.Str::random(8);
     }
 
     private function fakeCi(): string
     {
-        // Fallback SI Y SOLO SI no vino CI: timestamp recortado, evita colisión en dev.
-        return (string) now()->format('YmdHis');
+        return (string)(now()->format('YmdHis').rand(10,99));
     }
 
     private function fakeEmail(): string
     {
-        return 'sin-email-' . now()->format('YmdHis') . '@zyber.test';
+        return 'sin-email-'.now()->format('YmdHis').'@zyber.test';
     }
 }

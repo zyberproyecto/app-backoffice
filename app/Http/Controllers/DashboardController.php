@@ -35,7 +35,8 @@ class DashboardController extends Controller
 
         // 2) Comprobantes (separados por tipo)
         $pendientesAporteInicial = 0;
-        $pendientesComprobantes  = 0;
+        $pendientesComprobantes  = 0; // mensuales
+        $pendientesCompensatorios = 0;
 
         if (Schema::hasTable('comprobantes')) {
             $pendientesAporteInicial = DB::table('comprobantes')
@@ -44,26 +45,34 @@ class DashboardController extends Controller
                 ->count();
 
             $pendientesComprobantes = DB::table('comprobantes')
-                ->where('tipo', 'mensual')
+                ->where('tipo', 'aporte_mensual')
+                ->where('estado', 'pendiente')
+                ->count();
+
+            // NUEVO: compensatorios pendientes
+            $pendientesCompensatorios = DB::table('comprobantes')
+                ->where('tipo', 'compensatorio')
                 ->where('estado', 'pendiente')
                 ->count();
         }
 
         // 3) Horas de trabajo (prefiere horas_trabajo; si no, horas)
+        // En tu flujo/enum el “pendiente” real es 'reportado'
         $pendientesHoras = 0;
         if (Schema::hasTable('horas_trabajo')) {
-            $pendientesHoras = DB::table('horas_trabajo')->where('estado', 'pendiente')->count();
+            $pendientesHoras = DB::table('horas_trabajo')->where('estado', 'reportado')->count();
         } elseif (Schema::hasTable('horas')) {
-            $pendientesHoras = DB::table('horas')->where('estado', 'pendiente')->count();
+            $pendientesHoras = DB::table('horas')->where('estado', 'reportado')->count();
         }
 
-        // 4) Exoneraciones
+        // 4) Exoneraciones (enum: pendiente/aprobada/rechazada)
         $pendientesExoneraciones = $countPendientes('exoneraciones', ['estado']);
 
         return view('dashboard', compact(
             'pendientesSocios',
             'pendientesAporteInicial',
             'pendientesComprobantes',
+            'pendientesCompensatorios', // <- agregar este en la vista si querés mostrarlo
             'pendientesHoras',
             'pendientesExoneraciones'
         ));

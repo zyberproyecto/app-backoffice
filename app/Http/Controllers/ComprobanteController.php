@@ -1,64 +1,108 @@
 <?php
+
 namespace App\Http\Controllers;
 
-use App\Models\Comprobante;
 use Illuminate\Http\Request;
-use Illuminate\Database\QueryException;
-use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class ComprobanteController extends Controller
 {
-    // POST /api/comprobantes  (multipart/form-data)
-    public function store(Request $request)
+    // GET /admin/comprobantes?estado=pendiente|aprobado|rechazado|todos&tipo=inicial|mensual|compensatorio&ci=XXXXXXXX
+    public function index(Request $r)
     {
-        $user = $request->user();
+        $estado = strtolower($r->query('estado', 'pendiente'));
+        $tipoUi = strtolower($r->query('tipo', 'todos'));
 
-        $data = $request->validate([
-            'tipo'    => ['required', Rule::in([
-                Comprobante::TIPO_APORTE_INICIAL,
-                Comprobante::TIPO_APORTE_MENSUAL,
-                Comprobante::TIPO_COMPENSATORIO,
-            ])],
-            // Requerir periodo salvo en aporte_inicial
-            'periodo' => ['nullable', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/', Rule::requiredIf(fn() => $request->tipo !== Comprobante::TIPO_APORTE_INICIAL)],
-            'monto'   => ['required','numeric','min:0'],
-            'archivo' => ['required','file','mimes:pdf,jpg,jpeg,png','max:5120'], // 5MB
-        ]);
+        // Mapear valores de UI -> BD
+        $mapTipo = [
+            'inicial'       => 'aporte_inicial',
+            'mensual'       => 'aporte_mensual',
+            'compensatorio' => 'compensatorio',
+            'todos'         => 'todos',
+        ];
+        $tipo = $mapTipo[$tipoUi] ?? 'todos';
 
-        // Guardar archivo en storage/app/public/comprobantes/<ci>/...
-        $path = $request->file('archivo')->store("comprobantes/{$user->ci_usuario}", 'public');
+        $q = DB::table('comprobantes');
 
-        try {
-            $row = Comprobante::create([
-                'ci_usuario' => $user->ci_usuario,
-                'tipo'       => $data['tipo'],
-                'periodo'    => $data['periodo'] ?? null,
-                'monto'      => $data['monto'],
-                'archivo'    => $path,
-                'estado'     => Comprobante::ESTADO_PENDIENTE,
-            ]);
-        } catch (QueryException $e) {
-            // Colisión por UNIQUE (ci_usuario, tipo, periodo)
-            return response()->json([
-                'ok' => false,
-                'error' => 'Ya existe un comprobante de ese tipo para ese período.'
-            ], 422);
+        if ($estado !== 'todos') {
+            // Si tus datos ya están normalizados en minúsculas, podés usar where('estado',$estado)
+            $q->where('estado', $estado);
+        }
+        if ($tipo !== 'todos') {
+            $q->where('tipo', $tipo);
+        }
+        if ($ci = $r->query('ci')) {
+            $ci = preg_replace('/\D/', '', (string) $ci);
+            if ($ci !== '') {
+                $q->where('ci_usuario', $ci);
+            }
         }
 
-        return response()->json(['ok' => true, 'comprobante' => $row], 201);
+        $items = $q->orderByDesc('id')->paginate(20);
+
+        return view('comprobantes.index', compact('items', 'estado', 'tipoUi'));
     }
 
-    // GET /api/comprobantes/estado?tipo=&periodo=
-    public function estado(Request $request)
+    // GET /admin/comprobantes/{id}
+    public function show($id)
     {
-        $user   = $request->user();
-        $tipo   = $request->query('tipo');   // opcional
-        $periodo= $request->query('periodo'); // opcional (YYYY-MM)
+        $row = DB::table('comprobantes')->where('id', $id)->first();
+        abort_if(!$row, 404);
+        return view('comprobantes.show', compact('row'));
+    }
 
-        $q = Comprobante::where('ci_usuario', $user->ci_usuario)->orderByDesc('created_at');
-        if ($tipo)    $q->where('tipo', $tipo);
-        if ($periodo) $q->where('periodo', $periodo);
+    // PUT /admin/comprobantes/{id}/aprobar
+    public function aprobar($id)
+    {
+        $adminId = Auth::guard('admin')->id();
 
-        return response()->json(['ok' => true, 'items' => $q->get()]);
+        $ok = DB::transaction(function () use ($id, $adminId) {
+            $row = DB::table('comprobantes')->lockForUpdate()->where('id', $id)->first();
+            if (!$row) return false;
+
+            if (strtolower($row->estado) === 'aprobado') return true;
+
+            $data = [
+                'estado'     => 'aprobado',
+                'updated_at' => now(),
+            ];
+            if (Schema::hasColumn('comprobantes', 'aprobado_por')) $data['aprobado_por'] = $adminId;
+            if (Schema::hasColumn('comprobantes', 'aprobado_at'))  $data['aprobado_at'] = now();
+
+            DB::table('comprobantes')->where('id', $id)->update($data);
+            return true;
+        });
+
+        return back()->with($ok ? 'ok' : 'error', $ok ? 'Comprobante aprobado.' : 'No se pudo aprobar.');
+    }
+
+    // PUT /admin/comprobantes/{id}/rechazar
+    public function rechazar(Request $r, $id)
+    {
+        $adminId = Auth::guard('admin')->id();
+
+        $ok = DB::transaction(function () use ($id, $adminId, $r) {
+            $row = DB::table('comprobantes')->lockForUpdate()->where('id', $id)->first();
+            if (!$row) return false;
+
+            if (strtolower($row->estado) === 'rechazado') return true;
+
+            $data = [
+                'estado'     => 'rechazado',
+                'updated_at' => now(),
+            ];
+            if (Schema::hasColumn('comprobantes', 'aprobado_por')) $data['aprobado_por'] = $adminId;
+            if (Schema::hasColumn('comprobantes', 'aprobado_at'))  $data['aprobado_at'] = now();
+            if (Schema::hasColumn('comprobantes', 'nota_admin') && $r->filled('nota')) {
+                $data['nota_admin'] = $r->input('nota');
+            }
+
+            DB::table('comprobantes')->where('id', $id)->update($data);
+            return true;
+        });
+
+        return back()->with($ok ? 'ok' : 'error', $ok ? 'Comprobante rechazado.' : 'No se pudo rechazar.');
     }
 }
