@@ -57,7 +57,8 @@
                   >
               </td>
               <td>
-                  <input type="text" name="nota_admin" class="bo-input" placeholder="Opcional">
+                  {{--  FIX: el controller espera "nota" --}}
+                  <input type="text" name="nota" class="bo-input" placeholder="Opcional">
               </td>
               <td style="text-align:right;">
                   <button class="bo-btn" type="submit">Asignar</button>
@@ -100,7 +101,8 @@
               <td>{{ trim(($a->primer_nombre ?? '').' '.($a->primer_apellido ?? '')) }}</td>
               <td>{{ \Illuminate\Support\Carbon::parse($a->fecha_asignacion)->format('d/m/Y') }}</td>
               <td style="text-align:right;">
-                <form method="POST" action="{{ route('admin.unidades.liberar', $a->unidad_id) }}" style="margin:0;">
+                {{-- FIX: pasar id de la ASIGNACIÓN, no el unidad_id --}}
+                <form method="POST" action="{{ route('admin.unidades.liberar', $a->asignacion_id) }}" style="margin:0;">
                   @csrf
                   @method('PUT')
                   <button class="bo-btn bo-btn--ghost" type="submit">Liberar</button>

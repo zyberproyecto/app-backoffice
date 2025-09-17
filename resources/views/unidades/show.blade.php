@@ -87,15 +87,17 @@
           >
         </div>
         <div class="bo-form__group">
-          <label class="bo-muted" for="nota_admin">Nota (opcional)</label>
-          <input id="nota_admin" name="nota_admin" type="text" class="bo-input" placeholder="Observación interna">
+          <label class="bo-muted" for="nota">Nota (opcional)</label>
+          {{-- FIX: el controller espera "nota" --}}
+          <input id="nota" name="nota" type="text" class="bo-input" placeholder="Observación interna">
         </div>
         <button class="bo-btn" type="submit" style="width:100%;">Asignar</button>
       </form>
 
     {{-- Si está asignada → liberar --}}
-    @elseif($u->estado_unidad === 'asignada')
-      <form method="POST" action="{{ route('admin.unidades.liberar', $u->id) }}" style="margin:0;">
+    @elseif($u->estado_unidad === 'asignada' && isset($asignacion))
+      {{-- FIX: pasar id de ASIGNACIÓN (usuario_unidad.id), no el id de la unidad --}}
+      <form method="POST" action="{{ route('admin.unidades.liberar', $asignacion->asignacion_id) }}" style="margin:0;">
         @csrf
         @method('PUT')
         <button class="bo-btn bo-btn--ghost" type="submit" style="width:100%;">Liberar unidad</button>
