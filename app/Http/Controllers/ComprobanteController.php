@@ -9,13 +9,10 @@ use Illuminate\Support\Facades\Schema;
 
 class ComprobanteController extends Controller
 {
-    // GET /admin/comprobantes?estado=pendiente|aprobado|rechazado|todos&tipo=inicial|mensual|compensatorio&ci=XXXXXXXX
     public function index(Request $r)
     {
         $estado = strtolower($r->query('estado', 'pendiente'));
         $tipoUi = strtolower($r->query('tipo', 'todos'));
-
-        // Mapear valores de UI -> BD
         $mapTipo = [
             'inicial'       => 'aporte_inicial',
             'mensual'       => 'aporte_mensual',
@@ -27,8 +24,6 @@ class ComprobanteController extends Controller
         $q = DB::table('comprobantes');
 
         if ($estado !== 'todos') {
-            // Si tus datos ya están normalizados en minúsculas, podés usar where('estado',$estado)
-            $q->where('estado', $estado);
         }
         if ($tipo !== 'todos') {
             $q->where('tipo', $tipo);
@@ -45,7 +40,6 @@ class ComprobanteController extends Controller
         return view('comprobantes.index', compact('items', 'estado', 'tipoUi'));
     }
 
-    // GET /admin/comprobantes/{id}
     public function show($id)
     {
         $row = DB::table('comprobantes')->where('id', $id)->first();
@@ -53,7 +47,6 @@ class ComprobanteController extends Controller
         return view('comprobantes.show', compact('row'));
     }
 
-    // PUT /admin/comprobantes/{id}/aprobar
     public function aprobar($id)
     {
         $adminId = Auth::guard('admin')->id();
@@ -78,7 +71,6 @@ class ComprobanteController extends Controller
         return back()->with($ok ? 'ok' : 'error', $ok ? 'Comprobante aprobado.' : 'No se pudo aprobar.');
     }
 
-    // PUT /admin/comprobantes/{id}/rechazar
     public function rechazar(Request $r, $id)
     {
         $adminId = Auth::guard('admin')->id();

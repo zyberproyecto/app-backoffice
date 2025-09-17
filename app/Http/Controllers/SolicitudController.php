@@ -12,7 +12,6 @@ use Illuminate\Support\Str;
 
 class SolicitudController extends Controller
 {
-    // GET /admin/solicitudes
     public function index()
     {
         $solicitudes = Solicitud::orderByRaw("FIELD(estado,'pendiente','aprobado','rechazado')")
@@ -22,14 +21,12 @@ class SolicitudController extends Controller
         return view('solicitudes.index', compact('solicitudes'));
     }
 
-    // GET /admin/solicitudes/{id}
     public function show($id)
     {
         $sol = Solicitud::findOrFail($id);
         return view('solicitudes.show', compact('sol'));
     }
 
-    // PUT /admin/solicitudes/{id}/aprobar
     public function aprobar(Request $request, $id)
     {
         $adminId = auth()->id();
@@ -44,13 +41,10 @@ class SolicitudController extends Controller
                 return ['ok'=>false,'msg'=>'La solicitud ya fue rechazada anteriormente.','temp_password'=>null];
             }
 
-            // Normalizar CI (sólo dígitos)
             $ci = $sol->ci ? preg_replace('/\D/','',$sol->ci) : null;
 
-            // Partir nombre/apellido básico
             [$nombre, $apellido] = $this->splitNombre($sol->nombre_completo);
 
-            // Buscar usuario por CI o email
             $user = null;
             if ($ci) $user = Usuario::where('ci_usuario', $ci)->first();
             if (!$user && $sol->email) $user = Usuario::where('email',$sol->email)->first();
@@ -90,7 +84,6 @@ class SolicitudController extends Controller
             $sol->aprobado_at  = now();
             $sol->save();
 
-            // (Opcional) Asignar unidad si vino en el form
             if ($request->filled('unidad_id') && Schema::hasTable('usuario_unidad')) {
                 DB::table('usuario_unidad')->updateOrInsert(
                     ['ci_usuario'=>$user->ci_usuario,'unidad_id'=>$request->unidad_id],
@@ -108,7 +101,6 @@ class SolicitudController extends Controller
             ->with('usuario_ci', $res['usuario_ci'] ?? null);
     }
 
-    // PUT /admin/solicitudes/{id}/rechazar
     public function rechazar(Request $request, $id)
     {
         $adminId = auth()->id();
@@ -140,7 +132,6 @@ class SolicitudController extends Controller
             ->with($res['ok'] ? 'ok' : 'error', $res['msg']);
     }
 
-    // ==== Helpers ====
     private function splitNombre(?string $nombreCompleto): array
     {
         $nombreCompleto = trim((string)$nombreCompleto);

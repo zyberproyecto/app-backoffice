@@ -12,11 +12,11 @@ class Comprobante extends Model
 
     protected $fillable = [
         'ci_usuario',
-        'tipo',               // 'aporte_inicial' | 'mensual'
+        'tipo',               
         'monto',
         'fecha_pago',
-        'estado',             // 'pendiente' | 'aprobado' | 'rechazado'
-        'archivo',            // ruta o URL
+        'estado',        
+        'archivo',       
         'nota_admin',
         'motivo_rechazo',
     ];
@@ -32,7 +32,6 @@ class Comprobante extends Model
         'estado' => 'pendiente',
     ];
 
-    // --- Constantes de negocio ---
     public const ESTADO_PENDIENTE = 'pendiente';
     public const ESTADO_APROBADO  = 'aprobado';
     public const ESTADO_RECHAZADO = 'rechazado';
@@ -40,13 +39,11 @@ class Comprobante extends Model
     public const TIPO_APORTE_INICIAL = 'aporte_inicial';
     public const TIPO_MENSUAL        = 'mensual';
 
-    // --- Normalizadores ---
     public function setEstadoAttribute($value): void
     {
         $this->attributes['estado'] = Str::lower(trim((string) $value));
     }
 
-    // --- Scopes útiles ---
     public function scopeEstado(Builder $q, ?string $estado): Builder
     {
         if (!$estado || $estado === 'todos') return $q;
@@ -74,7 +71,6 @@ class Comprobante extends Model
         return $q->where('tipo', self::TIPO_APORTE_INICIAL);
     }
 
-    // --- Accesor opcional: URL absoluta del archivo ---
     public function getArchivoUrlAttribute(): ?string
     {
         $path = $this->archivo;
@@ -83,6 +79,5 @@ class Comprobante extends Model
 
         $base = rtrim((string) env('COOP_API_FILES_BASE', ''), '/');
         return $base ? $base . '/' . ltrim($path, '/') : $path;
-        // Si no definís COOP_API_FILES_BASE, devuelve el path tal cual.
     }
 }

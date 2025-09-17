@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\Schema;
 
 class HorasAdminController extends Controller
 {
-    // GET /admin/horas?estado=reportado|aprobado|rechazado|todas&ci=XXXXXXXX
     public function index(Request $r)
     {
         $estado = strtolower($r->query('estado', 'reportado'));
@@ -31,7 +30,6 @@ class HorasAdminController extends Controller
         return view('horas.index', compact('items', 'estado'));
     }
 
-    // GET /admin/horas/{id}
     public function show($id)
     {
         $row = DB::table('horas_trabajo')->where('id', $id)->first();
@@ -45,7 +43,6 @@ class HorasAdminController extends Controller
         return view('horas.show', compact('row', 'exoneracion'));
     }
 
-    // PUT /admin/horas/{id}/aprobar
     public function aprobar($id)
     {
         $adminId = Auth::guard('admin')->id();
@@ -66,7 +63,6 @@ class HorasAdminController extends Controller
         return back()->with($ok ? 'ok' : 'error', $ok ? 'Horas aprobadas.' : 'No se pudo aprobar.');
     }
 
-    // PUT /admin/horas/{id}/rechazar
     public function rechazar($id)
     {
         $adminId = Auth::guard('admin')->id();
@@ -82,7 +78,6 @@ class HorasAdminController extends Controller
 
             DB::table('horas_trabajo')->where('id', $id)->update($data);
 
-            // Si existía exoneración pendiente para esa semana, marcar como rechazada
             DB::table('exoneraciones')
                 ->where('ci_usuario', $row->ci_usuario)
                 ->whereDate('semana_inicio', $row->semana_inicio)

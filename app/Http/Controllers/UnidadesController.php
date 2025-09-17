@@ -16,14 +16,12 @@ class UnidadesController extends Controller
 
         $buscar = trim((string) $r->query('q', ''));
 
-        // Disponibles
         $disponibles = DB::table('unidades')
             ->when($buscar !== '', fn($q) => $q->where('codigo', 'like', "%{$buscar}%"))
             ->where('estado_unidad', 'disponible')
             ->orderBy('codigo')
             ->get();
 
-        // Asignadas activas (+ filtro por búsqueda)
         $asignadas = DB::table('usuario_unidad as uu')
             ->join('unidades as u', 'u.id', '=', 'uu.unidad_id')
             ->leftJoin('usuarios as us', 'us.ci_usuario', '=', 'uu.ci_usuario')
@@ -47,7 +45,6 @@ class UnidadesController extends Controller
         return view('unidades.index', compact('disponibles', 'asignadas', 'buscar'));
     }
 
-    // GET /admin/unidades/{id}
     public function show(int $id)
     {
         $u = DB::table('unidades')->where('id', $id)->first();
@@ -70,7 +67,6 @@ class UnidadesController extends Controller
         return view('unidades.show', compact('u', 'asignacion', 'historial'));
     }
 
-    // POST /admin/unidades/asignar
     public function asignar(Request $r)
     {
         $r->validate([
@@ -89,19 +85,16 @@ class UnidadesController extends Controller
         if (!$usuario) return back()->withInput()->with('error', 'CI no encontrado en usuarios.');
 
         $ok = DB::transaction(function () use ($ci, $unidadId, $nota) {
-            // Lock unidad
             $unidad = DB::table('unidades')->lockForUpdate()->where('id', $unidadId)->first();
             if (!$unidad) return false;
             if ($unidad->estado_unidad !== 'disponible') return false;
 
-            // Asegurar que usuario no tenga activa
             $activa = DB::table('usuario_unidad')->lockForUpdate()
                 ->where('ci_usuario', $ci)
                 ->where('estado', 'activa')
                 ->first();
             if ($activa) return false;
 
-            // Insert relación
             DB::table('usuario_unidad')->insert([
                 'ci_usuario'       => $ci,
                 'unidad_id'        => $unidadId,
@@ -112,7 +105,6 @@ class UnidadesController extends Controller
                 'updated_at'       => now(),
             ]);
 
-            // Update estado de unidad
             DB::table('unidades')->where('id', $unidadId)->update([
                 'estado_unidad' => 'asignada',
                 'updated_at'    => now(),
@@ -124,11 +116,9 @@ class UnidadesController extends Controller
         return back()->with($ok ? 'ok' : 'error', $ok ? 'Unidad asignada.' : 'No se pudo asignar (verificá disponibilidad o asignación previa).');
     }
 
-    // PUT /admin/unidades/{id}/liberar
     public function liberar($id)
     {
         $ok = DB::transaction(function () use ($id) {
-            // Lock relación activa
             $rel = DB::table('usuario_unidad')->lockForUpdate()
                 ->where('unidad_id', $id)
                 ->where('estado', 'activa')
@@ -136,11 +126,9 @@ class UnidadesController extends Controller
 
             if (!$rel) return false;
 
-            // Lock unidad
             $unidad = DB::table('unidades')->lockForUpdate()->where('id', $id)->first();
             if (!$unidad) return false;
 
-            // Cerrar relación
             $updateRel = [
                 'estado'     => 'liberada',
                 'updated_at' => now(),
@@ -150,7 +138,6 @@ class UnidadesController extends Controller
             }
             DB::table('usuario_unidad')->where('id', $rel->id)->update($updateRel);
 
-            // Volver unidad a disponible
             DB::table('unidades')->where('id', $id)->update([
                 'estado_unidad' => 'disponible',
                 'updated_at'    => now(),

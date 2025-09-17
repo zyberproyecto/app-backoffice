@@ -5,7 +5,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Exoneracion extends Model
 {
-    protected $table = 'exoneraciones';    // tabla de API-Cooperativa
+    protected $table = 'exoneraciones';    
     protected $fillable = [
         'ci_usuario','semana_inicio','motivo','estado',
         'resolucion_admin','archivo','created_at','updated_at',

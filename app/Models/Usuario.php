@@ -18,8 +18,8 @@ class Usuario extends Model
         'email',
         'telefono',
         'password',
-        'rol',              // 'socio'
-        'estado_registro',  // 'aprobado' | 'pendiente' | 'rechazado'
+        'rol',              
+        'estado_registro',  
     ];
 
     protected $hidden = ['password'];

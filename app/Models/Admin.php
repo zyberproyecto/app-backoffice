@@ -16,7 +16,7 @@ class Admin extends Authenticatable
         'ci_usuario',
         'email',
         'password',
-        'estado', // 'activo' | 'inactivo'
+        'estado', 
     ];
 
     protected $hidden = ['password', 'remember_token'];

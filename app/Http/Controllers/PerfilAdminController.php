@@ -8,7 +8,6 @@ use Illuminate\Support\Facades\Schema;
 
 class PerfilAdminController extends Controller
 {
-    // GET /admin/perfiles?estado=pendiente|aprobado|rechazado|todas&ci=XXXXXXXX
     public function index(Request $r)
     {
         if (!Schema::hasTable('usuarios_perfil')) {
@@ -34,7 +33,6 @@ class PerfilAdminController extends Controller
         return view('perfiles.index', compact('items', 'estado'));
     }
 
-    // GET /admin/perfiles/{ci}
     public function show(string $ci)
     {
         if (!Schema::hasTable('usuarios_perfil')) {
@@ -46,7 +44,6 @@ class PerfilAdminController extends Controller
         $perfil = DB::table('usuarios_perfil')->where('ci_usuario', $ci)->first();
         if (!$perfil) abort(404);
 
-        // Datos básicos del usuario (si existen)
         $usuario = Schema::hasTable('usuarios')
             ? DB::table('usuarios')->where('ci_usuario', $ci)->first()
             : null;
@@ -54,14 +51,12 @@ class PerfilAdminController extends Controller
         return view('perfiles.show', compact('perfil', 'usuario'));
     }
 
-    // PUT /admin/perfiles/{ci}/aprobar
     public function aprobar(string $ci)
     {
         $adminId = auth()->id();
         $ci = preg_replace('/\D/', '', $ci);
 
         $ok = DB::transaction(function () use ($ci, $adminId) {
-            // lock row
             $row = DB::table('usuarios_perfil')->lockForUpdate()->where('ci_usuario', $ci)->first();
             if (!$row) return false;
 
@@ -82,7 +77,6 @@ class PerfilAdminController extends Controller
             ->with($ok ? 'ok' : 'error', $ok ? 'Perfil aprobado.' : 'No se pudo aprobar (no existe).');
     }
 
-    // PUT /admin/perfiles/{ci}/rechazar
     public function rechazar(Request $r, string $ci)
     {
         $adminId = auth()->id();

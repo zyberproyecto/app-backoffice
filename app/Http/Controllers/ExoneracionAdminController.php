@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\Schema;
 
 class ExoneracionAdminController extends Controller
 {
-    // GET /admin/exoneraciones?estado=pendiente|aprobada|rechazada|todas&ci=XXXXXXXX
     public function index(Request $r)
     {
         $estado = strtolower($r->query('estado', 'pendiente'));
@@ -31,7 +30,6 @@ class ExoneracionAdminController extends Controller
         return view('exoneraciones.index', compact('exoneraciones', 'estado'));
     }
 
-    // GET /admin/exoneraciones/{id}
     public function show($id)
     {
         $exo = DB::table('exoneraciones')->where('id', $id)->first();
@@ -45,7 +43,6 @@ class ExoneracionAdminController extends Controller
         return view('exoneraciones.show', compact('exo', 'hora'));
     }
 
-    // PUT /admin/exoneraciones/{id}/aprobar
     public function aprobar($id)
     {
         $adminId = Auth::guard('admin')->id();
@@ -58,14 +55,12 @@ class ExoneracionAdminController extends Controller
             if ($estado === 'aprobada') return true;
             if ($estado === 'rechazada') return false;
 
-            // Aprobamos exoneración
             $data = ['estado' => 'aprobada', 'updated_at' => now()];
             if (Schema::hasColumn('exoneraciones', 'aprobado_por')) $data['aprobado_por'] = $adminId;
             if (Schema::hasColumn('exoneraciones', 'aprobado_at'))  $data['aprobado_at'] = now();
 
             DB::table('exoneraciones')->where('id', $id)->update($data);
 
-            // (Opcional de negocio) Sincronía: si hay horas "reportado" de esa semana → pasarlas a "aprobado"
             DB::table('horas_trabajo')
                 ->where('ci_usuario', $exo->ci_usuario)
                 ->whereDate('semana_inicio', $exo->semana_inicio)
@@ -81,7 +76,6 @@ class ExoneracionAdminController extends Controller
         return back()->with($ok ? 'ok' : 'error', $ok ? 'Exoneración aprobada.' : 'No se pudo aprobar (ya rechazada o inexistente).');
     }
 
-    // PUT /admin/exoneraciones/{id}/rechazar
     public function rechazar(Request $r, $id)
     {
         $adminId = Auth::guard('admin')->id();
@@ -98,10 +92,9 @@ class ExoneracionAdminController extends Controller
             if (Schema::hasColumn('exoneraciones', 'aprobado_por')) $data['aprobado_por'] = $adminId;
             if (Schema::hasColumn('exoneraciones', 'aprobado_at'))  $data['aprobado_at'] = now();
 
-            // Sanitizar/simplificar nota (si existe la columna)
             if (Schema::hasColumn('exoneraciones', 'nota_admin')) {
                 $nota = (string) $r->input('nota', '');
-                $nota = trim(mb_substr($nota, 0, 500)); // máx 500 chars
+                $nota = trim(mb_substr($nota, 0, 500));
                 if ($nota !== '') {
                     $data['nota_admin'] = $nota;
                 }

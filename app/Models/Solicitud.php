@@ -16,10 +16,10 @@ class Solicitud extends Model
         'dormitorios',
         'menores_a_cargo',
         'comentarios',
-        'estado',        // 'pendiente' | 'aprobado' | 'rechazado'
+        'estado',      
         'aprobado_por',
         'aprobado_at',
-        'usuario_ci',    // CI creado al aprobar
+        'usuario_ci',  
         'nota_admin',
     ];
 
@@ -30,13 +30,11 @@ class Solicitud extends Model
         'updated_at'      => 'datetime',
     ];
 
-    // Relaciones útiles (opcionales)
     public function usuario()
     {
         return $this->belongsTo(Usuario::class, 'usuario_ci', 'ci_usuario');
     }
 
-    // Scopes
     public function scopeEstado($q, string $estado)
     {
         return $q->where('estado', $estado);
