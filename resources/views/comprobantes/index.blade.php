@@ -21,22 +21,40 @@
       </thead>
       <tbody>
       @forelse($items as $c)
+        @php
+          $tipoVal = strtolower((string)($c->tipo ?? $c->tipo_aporte ?? ''));
+          $tipoTxt = match(true) {
+            in_array($tipoVal, ['inicial','aporte_inicial']) => 'Aporte inicial',
+            $tipoVal === 'aporte_mensual' => 'Aporte mensual',
+            $tipoVal === 'compensatorio'  => 'Compensatorio',
+            default => $tipoVal !== '' ? ucfirst($tipoVal) : '—',
+          };
+          $estado  = strtolower((string)$c->estado);
+        @endphp
         <tr>
           <td>{{ $c->id }}</td>
           <td>{{ $c->ci_usuario }}</td>
-          <td>{{ $c->tipo }}</td>
-          <td>{{ $c->periodo }}</td>
-          <td>{{ number_format((float)($c->monto ?? 0),2,',','.') }}</td>
+          <td>{{ $tipoTxt }}</td>
+          <td>{{ $c->periodo ?? '—' }}</td>
           <td>
-            @if($c->estado === 'pendiente')
-              <span style="color:var(--bo-warning); font-weight:600;">Pendiente</span>
-            @elseif($c->estado === 'aprobado')
-              <span style="color:var(--bo-success); font-weight:600;">Aprobado</span>
+            @if(isset($c->monto))
+              {{ number_format((float)$c->monto,2,',','.') }}
             @else
-              <span class="bo-muted">{{ ucfirst($c->estado) }}</span>
+              —
             @endif
           </td>
-          <td>{{ optional($c->created_at)->format('Y-m-d H:i') }}</td>
+          <td>
+            @if($estado === 'pendiente')
+              <span style="color:var(--bo-warning); font-weight:600;">Pendiente</span>
+            @elseif($estado === 'aprobado')
+              <span style="color:var(--bo-success); font-weight:600;">Aprobado</span>
+            @elseif($estado === 'rechazado')
+              <span class="bo-muted">Rechazado</span>
+            @else
+              <span class="bo-muted">{{ ucfirst($c->estado ?? '—') }}</span>
+            @endif
+          </td>
+          <td>{{ $c->created_at ?? '—' }}</td>
           <td style="text-align:right;">
             <a class="bo-btn bo-btn--ghost" href="{{ route('admin.comprobantes.show',$c->id) }}">Ver</a>
           </td>
@@ -54,7 +72,7 @@
 
   @if(method_exists($items,'links'))
     <div style="margin-top:12px;">
-      {{ $items->links() }}
+      {{ $items->appends(request()->query())->links() }}
     </div>
   @endif
 </div>
