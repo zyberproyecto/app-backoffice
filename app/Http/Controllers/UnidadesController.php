@@ -11,7 +11,7 @@ class UnidadesController extends Controller
     public function index(Request $r)
     {
         if (!Schema::hasTable('unidades') || !Schema::hasTable('usuario_unidad')) {
-            return back()->with('error', 'Faltan tablas "unidades" o "usuario_unidad". Ejecutá las migraciones en api-cooperativa.');
+            return back()->with('error', 'Faltan tablas "unidades" o "usuario_unidad". Ejecutá migraciones en api-cooperativa.');
         }
 
         $buscar = trim((string) $r->query('q', ''));
@@ -28,10 +28,11 @@ class UnidadesController extends Controller
             ->where('uu.estado', 'activa')
             ->when($buscar !== '', fn($q) => $q->where('u.codigo', 'like', "%{$buscar}%"))
             ->select(
-                'uu.id',
+                'uu.id as asignacion_id',
                 'uu.ci_usuario',
                 'uu.unidad_id',
                 'uu.fecha_asignacion',
+                'uu.estado as estado_asignacion',
                 'u.codigo',
                 'u.dormitorios',
                 'u.estado_unidad',
@@ -50,18 +51,39 @@ class UnidadesController extends Controller
         $u = DB::table('unidades')->where('id', $id)->first();
         abort_if(!$u, 404);
 
+        $selectAsign = [
+            'uu.id as asignacion_id',
+            'uu.ci_usuario',
+            'uu.unidad_id',
+            'uu.fecha_asignacion',
+            'uu.estado',
+            'uu.nota_admin',
+            'us.primer_nombre',
+            'us.primer_apellido',
+            'us.email',
+        ];
+
         $asignacion = DB::table('usuario_unidad as uu')
             ->leftJoin('usuarios as us', 'us.ci_usuario', '=', 'uu.ci_usuario')
             ->where('uu.unidad_id', $id)
             ->where('uu.estado', 'activa')
-            ->select('uu.*', 'us.primer_nombre', 'us.primer_apellido', 'us.email')
+            ->select($selectAsign)
             ->first();
 
         $historial = DB::table('usuario_unidad as uu')
             ->leftJoin('usuarios as us', 'us.ci_usuario', '=', 'uu.ci_usuario')
             ->where('uu.unidad_id', $id)
             ->orderByDesc('uu.fecha_asignacion')
-            ->select('uu.*', 'us.primer_nombre', 'us.primer_apellido')
+            ->select(
+                'uu.id',
+                'uu.ci_usuario',
+                'uu.unidad_id',
+                'uu.fecha_asignacion',
+                'uu.estado',
+                'uu.nota_admin',
+                'us.primer_nombre',
+                'us.primer_apellido'
+            )
             ->get();
 
         return view('unidades.show', compact('u', 'asignacion', 'historial'));
@@ -71,28 +93,54 @@ class UnidadesController extends Controller
     {
         $r->validate([
             'ci_usuario' => ['required', 'string', 'max:8', 'regex:/^\d{7,8}$/'],
-            'unidad_id'  => ['required', 'integer'],
+            'unidad_id'  => ['required', 'integer', 'min:1'],
+            'nota'       => ['nullable', 'string', 'max:5000'],
             'nota_admin' => ['nullable', 'string', 'max:5000'],
         ], [
             'ci_usuario.regex' => 'La CI debe tener 7 u 8 dígitos (sin puntos ni guiones).',
         ]);
 
-        $ci       = preg_replace('/\D/', '', $r->input('ci_usuario'));
+        $ci       = preg_replace('/\D/', '', (string)$r->input('ci_usuario'));
         $unidadId = (int) $r->input('unidad_id');
-        $nota     = trim((string) $r->input('nota_admin'));
+        $nota     = trim((string) ($r->input('nota') ?? $r->input('nota_admin') ?? ''));
 
-        $usuario = DB::table('usuarios')->where('ci_usuario', $ci)->first();
-        if (!$usuario) return back()->withInput()->with('error', 'CI no encontrado en usuarios.');
+        $usuarioAprobado = DB::table('usuarios')
+            ->where('ci_usuario', $ci)
+            ->where('estado_registro', 'aprobado')
+            ->exists();
+
+        if (!$usuarioAprobado) {
+            return back()->withInput()->with('error', 'El usuario no está aprobado desde Solicitudes.');
+        }
+
+        $perfilAprobado = DB::table('usuarios_perfil')
+            ->where('ci_usuario', $ci)
+            ->where('estado_revision', 'aprobado')
+            ->exists();
+
+        if (!$perfilAprobado) {
+            return back()->withInput()->with('error', 'Perfil de socio no está aprobado.');
+        }
+
+        $aporteInicialOk = DB::table('comprobantes')
+            ->where('ci_usuario', $ci)
+            ->where('tipo', 'aporte_inicial')
+            ->where('estado', 'aprobado')
+            ->exists();
+
+        if (!$aporteInicialOk) {
+            return back()->withInput()->with('error', 'Aporte inicial no está aprobado.');
+        }
 
         $ok = DB::transaction(function () use ($ci, $unidadId, $nota) {
+
             $unidad = DB::table('unidades')->lockForUpdate()->where('id', $unidadId)->first();
-            if (!$unidad) return false;
-            if ($unidad->estado_unidad !== 'disponible') return false;
+            if (!$unidad || $unidad->estado_unidad !== 'disponible') return false;
 
             $activa = DB::table('usuario_unidad')->lockForUpdate()
                 ->where('ci_usuario', $ci)
                 ->where('estado', 'activa')
-                ->first();
+                ->exists();
             if ($activa) return false;
 
             DB::table('usuario_unidad')->insert([
@@ -105,6 +153,7 @@ class UnidadesController extends Controller
                 'updated_at'       => now(),
             ]);
 
+            // Marcar unidad
             DB::table('unidades')->where('id', $unidadId)->update([
                 'estado_unidad' => 'asignada',
                 'updated_at'    => now(),
@@ -113,39 +162,7 @@ class UnidadesController extends Controller
             return true;
         });
 
-        return back()->with($ok ? 'ok' : 'error', $ok ? 'Unidad asignada.' : 'No se pudo asignar (verificá disponibilidad o asignación previa).');
+        return back()->with($ok ? 'ok' : 'error', $ok ? 'Unidad asignada.' : 'No se pudo asignar (verificá requisitos o asignación previa).');
     }
 
-    public function liberar($id)
-    {
-        $ok = DB::transaction(function () use ($id) {
-            $rel = DB::table('usuario_unidad')->lockForUpdate()
-                ->where('unidad_id', $id)
-                ->where('estado', 'activa')
-                ->first();
-
-            if (!$rel) return false;
-
-            $unidad = DB::table('unidades')->lockForUpdate()->where('id', $id)->first();
-            if (!$unidad) return false;
-
-            $updateRel = [
-                'estado'     => 'liberada',
-                'updated_at' => now(),
-            ];
-            if (Schema::hasColumn('usuario_unidad', 'fecha_liberacion')) {
-                $updateRel['fecha_liberacion'] = now()->toDateString();
-            }
-            DB::table('usuario_unidad')->where('id', $rel->id)->update($updateRel);
-
-            DB::table('unidades')->where('id', $id)->update([
-                'estado_unidad' => 'disponible',
-                'updated_at'    => now(),
-            ]);
-
-            return true;
-        });
-
-        return back()->with($ok ? 'ok' : 'error', $ok ? 'Unidad liberada.' : 'No se pudo liberar (no hay asignación activa).');
-    }
 }

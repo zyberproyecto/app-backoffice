@@ -45,30 +45,47 @@
               <th style="padding:8px;">Integrantes</th>
               <th style="padding:8px;">Estado</th>
               <th style="padding:8px;">Actualizado</th>
-              <th style="padding:8px;"></th>
+              <th style="padding:8px; text-align:right;">Acciones</th>
             </tr>
           </thead>
           <tbody>
             @foreach($items as $row)
+              @php $st = strtolower($row->estado_revision ?? 'pendiente'); @endphp
               <tr style="border-bottom:1px solid #eef2f7;">
                 <td style="padding:8px; font-weight:600;">{{ $row->ci_usuario }}</td>
-                <td style="padding:8px;">{{ $row->ocupacion }}</td>
-                <td style="padding:8px;">$ {{ number_format((float)$row->ingresos_nucleo_familiar, 2, ',', '.') }}</td>
-                <td style="padding:8px;">{{ $row->integrantes_familia }}</td>
+                <td style="padding:8px;">{{ $row->ocupacion ?? '—' }}</td>
+                <td style="padding:8px;">
+                  {{ is_null($row->ingresos_nucleo_familiar) ? '—' : ('$ '.number_format((float)$row->ingresos_nucleo_familiar, 2, ',', '.')) }}
+                </td>
+                <td style="padding:8px;">{{ $row->integrantes_familia ?? '—' }}</td>
                 <td style="padding:8px;">
                   <span style="padding:2px 8px; border-radius:999px; font-size:.85rem;
-                    @switch(strtolower($row->estado_revision))
+                    @switch($st)
                       @case('aprobado')  background:#ecfdf5;color:#065f46; @break
                       @case('rechazado') background:#fef2f2;color:#991b1b; @break
                       @default           background:#fff7ed;color:#9a3412;
                     @endswitch
-                  ">
-                    {{ strtolower($row->estado_revision) }}
-                  </span>
+                  ">{{ $st }}</span>
                 </td>
-                <td style="padding:8px; color:var(--bo-muted);">{{ \Illuminate\Support\Carbon::parse($row->updated_at)->format('Y-m-d H:i') }}</td>
-                <td style="padding:8px;">
-                  <a href="{{ route('admin.perfiles.show', $row->ci_usuario) }}" class="bo-btn">Ver</a>
+                <td style="padding:8px; color:var(--bo-muted);">
+                  {{ !empty($row->updated_at) ? \Illuminate\Support\Carbon::parse($row->updated_at)->format('Y-m-d H:i') : '—' }}
+                </td>
+                <td style="padding:8px; text-align:right; white-space:nowrap;">
+                  <a href="{{ route('admin.perfiles.show', $row->ci_usuario) }}" class="bo-btn bo-btn--ghost">Ver</a>
+
+                  @if($st === 'pendiente')
+                    <form action="{{ route('admin.perfiles.aprobar', $row->ci_usuario) }}"
+                          method="POST" style="display:inline-block; margin-left:6px">
+                      @csrf @method('PUT')
+                      <button type="submit" class="bo-btn bo-btn--success">Aprobar</button>
+                    </form>
+
+                    <form action="{{ route('admin.perfiles.rechazar', $row->ci_usuario) }}"
+                          method="POST" style="display:inline-block; margin-left:6px">
+                      @csrf @method('PUT')
+                      <button type="submit" class="bo-btn bo-btn--danger">Rechazar</button>
+                    </form>
+                  @endif
                 </td>
               </tr>
             @endforeach

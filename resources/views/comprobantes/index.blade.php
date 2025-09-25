@@ -16,7 +16,7 @@
           <th>Monto</th>
           <th>Estado</th>
           <th>Subido</th>
-          <th></th>
+          <th style="text-align:right;">Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -29,7 +29,7 @@
             $tipoVal === 'compensatorio'  => 'Compensatorio',
             default => $tipoVal !== '' ? ucfirst($tipoVal) : '—',
           };
-          $estado  = strtolower((string)$c->estado);
+          $estado  = strtolower((string)($c->estado ?? 'pendiente'));
         @endphp
         <tr>
           <td>{{ $c->id }}</td>
@@ -55,8 +55,27 @@
             @endif
           </td>
           <td>{{ $c->created_at ?? '—' }}</td>
-          <td style="text-align:right;">
+
+          <td style="text-align:right; white-space:nowrap;">
             <a class="bo-btn bo-btn--ghost" href="{{ route('admin.comprobantes.show',$c->id) }}">Ver</a>
+
+            @if($estado === 'pendiente')
+              {{-- Aprobar (PUT) --}}
+              <form action="{{ route('admin.comprobantes.aprobar', $c->id) }}"
+                    method="POST" style="display:inline-block; margin-left:6px">
+                @csrf
+                @method('PUT')
+                <button type="submit" class="bo-btn bo-btn--success">Aprobar</button>
+              </form>
+
+              {{-- Rechazar (PUT) --}}
+              <form action="{{ route('admin.comprobantes.rechazar', $c->id) }}"
+                    method="POST" style="display:inline-block; margin-left:6px">
+                @csrf
+                @method('PUT')
+                <button type="submit" class="bo-btn bo-btn--danger">Rechazar</button>
+              </form>
+            @endif
           </td>
         </tr>
       @empty

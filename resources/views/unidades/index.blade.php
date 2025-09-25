@@ -1,4 +1,4 @@
-@extends('layout')
+@extends('layout') 
 @section('title','Unidades')
 
 @section('content')
@@ -57,7 +57,6 @@
                   >
               </td>
               <td>
-                  {{--  FIX: el controller espera "nota" --}}
                   <input type="text" name="nota" class="bo-input" placeholder="Opcional">
               </td>
               <td style="text-align:right;">
@@ -89,7 +88,6 @@
               <th>CI</th>
               <th>Socio</th>
               <th>Asignada</th>
-              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -99,15 +97,7 @@
               <td>{{ $a->dormitorios }}</td>
               <td>{{ $a->ci_usuario }}</td>
               <td>{{ trim(($a->primer_nombre ?? '').' '.($a->primer_apellido ?? '')) }}</td>
-              <td>{{ \Illuminate\Support\Carbon::parse($a->fecha_asignacion)->format('d/m/Y') }}</td>
-              <td style="text-align:right;">
-                {{-- FIX: pasar id de la ASIGNACIÓN, no el unidad_id --}}
-                <form method="POST" action="{{ route('admin.unidades.liberar', $a->asignacion_id) }}" style="margin:0;">
-                  @csrf
-                  @method('PUT')
-                  <button class="bo-btn bo-btn--ghost" type="submit">Liberar</button>
-                </form>
-              </td>
+              <td>{{ $a->fecha_asignacion ? \Illuminate\Support\Carbon::parse($a->fecha_asignacion)->format('d/m/Y') : '—' }}</td>
             </tr>
             @endforeach
           </tbody>

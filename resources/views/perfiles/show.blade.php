@@ -1,113 +1,86 @@
 @extends('layout')
-
-@php
-    // Defaults para evitar "Undefined variable"
-    /** @var \Illuminate\Contracts\Pagination\Paginator|\Illuminate\Support\Collection|null $items */
-    $items  = $items  ?? collect();
-    $estado = $estado ?? request('estado', 'todas');
-
-    // ¿Está vacío?
-    $isEmpty = $items instanceof \Illuminate\Contracts\Pagination\Paginator
-        ? ($items->total() === 0)
-        : ($items instanceof \Illuminate\Support\Collection ? $items->isEmpty() : empty($items));
-
-    // ¿Hay paginación?
-    $hasPaginator = $items instanceof \Illuminate\Contracts\Pagination\Paginator
-                 || $items instanceof \Illuminate\Pagination\LengthAwarePaginator;
-@endphp
-
-@section('title','Perfiles de socios')
+@section('title','Perfil — CI '.$perfil->ci_usuario)
 
 @section('content')
 <div class="bo-main">
-  <h1 class="bo-h1">Perfiles de socios</h1>
+  <h1 class="bo-h1">Perfil — CI {{ $perfil->ci_usuario }}</h1>
 
-  {{-- Filtros --}}
-  <form method="GET" class="bo-panel" style="margin-bottom:14px; display:grid; grid-template-columns:1fr 1fr auto; gap:10px;">
-    <div>
-      <label for="estado" class="text-muted" style="display:block; font-size:.9rem;">Estado</label>
-      <select name="estado" id="estado" class="form-control">
-        @php $est = $estado ?? 'pendiente'; @endphp
-        <option value="pendiente" {{ $est==='pendiente' ? 'selected' : '' }}>pendiente</option>
-        <option value="aprobado"  {{ $est==='aprobado'  ? 'selected' : '' }}>aprobado</option>
-        <option value="rechazado" {{ $est==='rechazado' ? 'selected' : '' }}>rechazado</option>
-        <option value="todas"     {{ $est==='todas'     ? 'selected' : '' }}>todas</option>
-      </select>
-    </div>
-    <div>
-      <label for="ci" class="text-muted" style="display:block; font-size:.9rem;">CI (solo dígitos)</label>
-      <input type="text" name="ci" id="ci" value="{{ request('ci') }}" class="form-control" placeholder="Ej: 43216543" />
-    </div>
-    <div style="align-self:end;">
-      <button class="bo-btn">Filtrar</button>
-    </div>
-  </form>
-
-  {{-- Mensajes --}}
   @if(session('ok'))    <div class="bo-alert bo-alert--success">{{ session('ok') }}</div>@endif
   @if(session('error')) <div class="bo-alert" style="background:#fef2f2;color:#991b1b;border-color:#fecaca;">{{ session('error') }}</div>@endif
 
-  {{-- Tabla --}}
   <div class="bo-panel">
-    @if($isEmpty)
-      <div class="bo-panel__body">No hay perfiles para mostrar.</div>
-    @else
-      <div style="overflow:auto;">
-        <table class="table" style="width:100%; border-collapse:collapse;">
-          <thead>
-            <tr style="text-align:left; border-bottom:1px solid var(--bo-border);">
-              <th style="padding:8px;">CI</th>
-              <th style="padding:8px;">Ocupación</th>
-              <th style="padding:8px;">Ingresos (núcleo)</th>
-              <th style="padding:8px;">Integrantes</th>
-              <th style="padding:8px;">Estado</th>
-              <th style="padding:8px;">Actualizado</th>
-              <th style="padding:8px;"></th>
-            </tr>
-          </thead>
-          <tbody>
-            @foreach($items as $row)
-              <tr style="border-bottom:1px solid #eef2f7;">
-                <td style="padding:8px; font-weight:600;">{{ $row->ci_usuario }}</td>
-                <td style="padding:8px;">{{ $row->ocupacion ?? '—' }}</td>
-                <td style="padding:8px;">
-                  @php $m = $row->ingresos_nucleo_familiar ?? null; @endphp
-                  {{ is_null($m) ? '—' : ('$ '.number_format((float)$m, 2, ',', '.')) }}
-                </td>
-                <td style="padding:8px;">{{ $row->integrantes_familia ?? '—' }}</td>
-                <td style="padding:8px;">
-                  @php $st = strtolower($row->estado_revision ?? 'incompleto'); @endphp
-                  <span style="padding:2px 8px; border-radius:999px; font-size:.85rem;
-                    @switch($st)
-                      @case('aprobado')  background:#ecfdf5;color:#065f46; @break
-                      @case('rechazado') background:#fef2f2;color:#991b1b; @break
-                      @default           background:#fff7ed;color:#9a3412;
-                    @endswitch
-                  ">
-                    {{ $st }}
-                  </span>
-                </td>
-                <td style="padding:8px; color:var(--bo-muted);">
-                  @php
-                    $upd = $row->updated_at ?? null;
-                  @endphp
-                  {{ $upd ? \Illuminate\Support\Carbon::parse($upd)->format('Y-m-d H:i') : '—' }}
-                </td>
-                <td style="padding:8px;">
-                  <a href="{{ route('admin.perfiles.show', $row->ci_usuario) }}" class="bo-btn">Ver</a>
-                </td>
-              </tr>
-            @endforeach
-          </tbody>
-        </table>
-      </div>
+    <div class="bo-panel__title">Datos personales</div>
 
-      <div style="margin-top:12px;">
-        @if($hasPaginator)
-          {{ $items->withQueryString()->links() }}
-        @endif
-      </div>
-    @endif
+    @php
+      $st = strtolower($perfil->estado_revision ?? 'incompleto');
+      $fmtMoney = fn($v) => is_null($v) ? '—' : ('$ '.number_format((float)$v, 2, ',', '.'));
+    @endphp
+
+    <div class="bo-panel__body">
+      <dl style="display:grid; grid-template-columns:180px 1fr; gap:8px 16px; margin:0;">
+        <dt class="bo-muted">CI</dt>
+        <dd>{{ $perfil->ci_usuario }}</dd>
+
+        <dt class="bo-muted">Nombre</dt>
+        <dd>{{ isset($usuario) ? trim(($usuario->primer_nombre ?? '').' '.($usuario->primer_apellido ?? '')) ?: '—' : '—' }}</dd>
+
+        <dt class="bo-muted">Email</dt>
+        <dd>{{ $usuario->email ?? '—' }}</dd>
+
+        <dt class="bo-muted">Teléfono</dt>
+        <dd>{{ $usuario->telefono ?? '—' }}</dd>
+
+        <dt class="bo-muted">Ocupación</dt>
+        <dd>{{ $perfil->ocupacion ?? '—' }}</dd>
+
+        <dt class="bo-muted">Ingresos (núcleo)</dt>
+        <dd>{{ $fmtMoney($perfil->ingresos_nucleo_familiar ?? null) }}</dd>
+
+        <dt class="bo-muted">Integrantes</dt>
+        <dd>{{ $perfil->integrantes_familia ?? '—' }}</dd>
+
+        <dt class="bo-muted">Contacto alternativo</dt>
+        <dd>{{ $perfil->contacto ?? '—' }}</dd>
+
+        <dt class="bo-muted">Dirección</dt>
+        <dd>{{ $perfil->direccion ?? '—' }}</dd>
+
+        <dt class="bo-muted">Estado</dt>
+        <dd>
+          <span style="padding:2px 8px; border-radius:999px; font-size:.85rem;
+            @switch($st)
+              @case('aprobado')  background:#ecfdf5;color:#065f46; @break
+              @case('rechazado') background:#fef2f2;color:#991b1b; @break
+              @default           background:#fff7ed;color:#9a3412;
+            @endswitch
+          ">{{ $st }}</span>
+        </dd>
+
+        <dt class="bo-muted">Actualizado</dt>
+        <dd>{{ !empty($perfil->updated_at) ? \Illuminate\Support\Carbon::parse($perfil->updated_at)->format('Y-m-d H:i') : '—' }}</dd>
+
+        <dt class="bo-muted">Aprobado por</dt>
+        <dd>{{ $perfil->aprobado_por ?? '—' }}</dd>
+
+        <dt class="bo-muted">Aprobado el</dt>
+        <dd>{{ !empty($perfil->aprobado_at) ? \Illuminate\Support\Carbon::parse($perfil->aprobado_at)->format('Y-m-d H:i') : '—' }}</dd>
+      </dl>
+    </div>
+
+    <div class="bo-panel__footer" style="display:flex; gap:8px; justify-content:flex-end;">
+      <a href="{{ route('admin.perfiles.index') }}" class="bo-btn bo-btn--ghost">Volver</a>
+
+      @if($st === 'pendiente')
+        <form action="{{ route('admin.perfiles.aprobar', $perfil->ci_usuario) }}" method="POST">
+          @csrf @method('PUT')
+          <button type="submit" class="bo-btn bo-btn--success">Aprobar</button>
+        </form>
+        <form action="{{ route('admin.perfiles.rechazar', $perfil->ci_usuario) }}" method="POST">
+          @csrf @method('PUT')
+          <button type="submit" class="bo-btn bo-btn--danger">Rechazar</button>
+        </form>
+      @endif
+    </div>
   </div>
 </div>
 @endsection

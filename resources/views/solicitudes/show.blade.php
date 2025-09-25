@@ -7,6 +7,11 @@
   {{-- Detalle --}}
   <section class="bo-panel">
     <div class="bo-panel__title">Solicitud #{{ $sol->id }}</div>
+
+    {{-- mensajes flash --}}
+    @if(session('ok'))    <div class="bo-alert bo-alert--success">{{ session('ok') }}</div>@endif
+    @if(session('error')) <div class="bo-alert" style="background:#fef2f2;color:#991b1b;border-color:#fecaca;">{{ session('error') }}</div>@endif
+
     <div>
       <dl style="margin:0; display:grid; grid-template-columns: 180px 1fr; gap:10px 12px;">
         <dt class="bo-muted">CI</dt>
@@ -45,7 +50,9 @@
         <dd style="margin:0;">{{ $sol->aprobado_por ?? '-' }}</dd>
 
         <dt class="bo-muted">Aprobado el</dt>
-        <dd style="margin:0;">{{ optional($sol->aprobado_at)->format('Y-m-d H:i') ?? '-' }}</dd>
+        <dd style="margin:0;">
+          {{ $sol->aprobado_at ? \Illuminate\Support\Carbon::parse($sol->aprobado_at)->format('Y-m-d H:i') : '-' }}
+        </dd>
       </dl>
     </div>
   </section>
@@ -63,19 +70,11 @@
       @if($sol->estado === 'pendiente')
         <form method="POST" action="{{ route('admin.solicitudes.aprobar',$sol->id) }}" style="margin:0 0 8px 0;">
           @csrf @method('PUT')
-          {{-- 
-          <label class="bo-muted" for="unidad_id">Unidad (opcional)</label>
-          <input type="number" class="bo-input mb-2" id="unidad_id" name="unidad_id" placeholder="ID Unidad">
-          --}}
           <button class="bo-btn" type="submit" style="width:100%;">Aprobar y crear usuario</button>
         </form>
 
         <form method="POST" action="{{ route('admin.solicitudes.rechazar',$sol->id) }}" style="margin:0;">
           @csrf @method('PUT')
-          {{-- 
-          <label class="bo-muted" for="nota">Motivo (opcional)</label>
-          <textarea class="bo-input mb-2" id="nota" name="nota" rows="2" placeholder="Motivo del rechazo"></textarea>
-          --}}
           <button class="bo-btn bo-btn--ghost" type="submit" style="width:100%;">Rechazar</button>
         </form>
 

@@ -35,10 +35,10 @@
       </dd>
 
       <dt class="bo-muted">Creada</dt>
-      <dd style="margin:0;">{{ optional($u->created_at)->format('Y-m-d H:i') ?? '—' }}</dd>
+      <dd style="margin:0;">{{ !empty($u->created_at) ? \Illuminate\Support\Carbon::parse($u->created_at)->format('Y-m-d H:i') : '—' }}</dd>
 
       <dt class="bo-muted">Actualizada</dt>
-      <dd style="margin:0;">{{ optional($u->updated_at)->format('Y-m-d H:i') ?? '—' }}</dd>
+      <dd style="margin:0;">{{ !empty($u->updated_at) ? \Illuminate\Support\Carbon::parse($u->updated_at)->format('Y-m-d H:i') : '—' }}</dd>
     </dl>
 
     {{-- Asignación actual, si existe --}}
@@ -88,20 +88,14 @@
         </div>
         <div class="bo-form__group">
           <label class="bo-muted" for="nota">Nota (opcional)</label>
-          {{-- FIX: el controller espera "nota" --}}
           <input id="nota" name="nota" type="text" class="bo-input" placeholder="Observación interna">
         </div>
         <button class="bo-btn" type="submit" style="width:100%;">Asignar</button>
       </form>
 
-    {{-- Si está asignada → liberar --}}
-    @elseif($u->estado_unidad === 'asignada' && isset($asignacion))
-      {{-- FIX: pasar id de ASIGNACIÓN (usuario_unidad.id), no el id de la unidad --}}
-      <form method="POST" action="{{ route('admin.unidades.liberar', $asignacion->asignacion_id) }}" style="margin:0;">
-        @csrf
-        @method('PUT')
-        <button class="bo-btn bo-btn--ghost" type="submit" style="width:100%;">Liberar unidad</button>
-      </form>
+    {{-- Si está asignada → solo info, sin liberar --}}
+    @elseif($u->estado_unidad === 'asignada')
+      <div class="bo-alert bo-alert--info">La unidad está asignada. No hay acciones disponibles.</div>
 
     {{-- Si está entregada → solo info --}}
     @elseif($u->estado_unidad === 'entregada')
@@ -116,7 +110,7 @@
   </aside>
 </div>
 
-{{-- Historial de asignaciones (opcional) --}}
+{{-- Historial de asignaciones --}}
 @if(isset($historial) && $historial->count())
   <div class="bo-panel" style="margin-top:16px;">
     <div class="bo-panel__title">Historial de asignaciones</div>
@@ -127,7 +121,6 @@
             <th>CI</th>
             <th>Socio</th>
             <th>Desde</th>
-            <th>Hasta</th>
             <th>Nota</th>
           </tr>
         </thead>
@@ -137,11 +130,6 @@
               <td>{{ $h->ci_usuario }}</td>
               <td>{{ trim(($h->primer_nombre ?? '').' '.($h->primer_apellido ?? '')) }}</td>
               <td>{{ \Illuminate\Support\Carbon::parse($h->fecha_asignacion)->format('d/m/Y') }}</td>
-              <td>
-                {{ $h->fecha_liberacion
-                    ? \Illuminate\Support\Carbon::parse($h->fecha_liberacion)->format('d/m/Y')
-                    : '—' }}
-              </td>
               <td>{{ $h->nota_admin ?? '—' }}</td>
             </tr>
           @endforeach

@@ -14,21 +14,40 @@ class PerfilAdminController extends Controller
             abort(500, 'Falta la tabla usuarios_perfil (ejecutar migraciones en api-usuarios).');
         }
 
-        $estado = strtolower($r->query('estado', 'pendiente'));
-        $q = DB::table('usuarios_perfil');
+        // Normalizamos el filtro de estado
+        $estado = strtolower((string)$r->query('estado', 'pendiente'));
+        $valid  = ['pendiente','aprobado','rechazado','todas'];
+        if (!in_array($estado, $valid, true)) {
+            $estado = 'pendiente';
+        }
+
+        $q = DB::table('usuarios_perfil as p');
 
         if ($estado !== 'todas') {
-            $q->whereRaw('LOWER(estado_revision) = ?', [$estado]);
+            if ($estado === 'pendiente') {
+                // Incluimos NULL / '' como "pendiente" para no perder registros
+                $q->where(function ($w) {
+                    $w->whereRaw('LOWER(COALESCE(p.estado_revision, "")) = ?', ['pendiente'])
+                      ->orWhereNull('p.estado_revision')
+                      ->orWhere('p.estado_revision', '');
+                });
+            } else {
+                $q->whereRaw('LOWER(p.estado_revision) = ?', [$estado]);
+            }
         }
 
         if ($ci = $r->query('ci')) {
             $ci = preg_replace('/\D/', '', (string) $ci);
             if ($ci !== '') {
-                $q->where('ci_usuario', $ci);
+                // Permitimos búsqueda parcial por CI
+                $q->where('p.ci_usuario', 'like', "%{$ci}%");
             }
         }
 
-        $items = $q->orderByDesc('updated_at')->paginate(20);
+        // Orden: primero pendientes, luego aprobados, luego rechazados; después por fecha
+        $items = $q->orderByRaw("FIELD(LOWER(COALESCE(p.estado_revision,'pendiente')), 'pendiente','aprobado','rechazado')")
+                   ->orderByDesc('p.updated_at')
+                   ->paginate(20);
 
         return view('perfiles.index', compact('items', 'estado'));
     }
@@ -53,14 +72,15 @@ class PerfilAdminController extends Controller
 
     public function aprobar(string $ci)
     {
-        $adminId = auth()->id();
+        // Guard explícito de admin (con fallback)
+        $adminId = auth('admin')->id() ?? auth()->id();
         $ci = preg_replace('/\D/', '', $ci);
 
         $ok = DB::transaction(function () use ($ci, $adminId) {
             $row = DB::table('usuarios_perfil')->lockForUpdate()->where('ci_usuario', $ci)->first();
             if (!$row) return false;
 
-            if (strtolower($row->estado_revision) === 'aprobado') return true;
+            if (strtolower((string)$row->estado_revision) === 'aprobado') return true;
 
             DB::table('usuarios_perfil')->where('ci_usuario', $ci)->update([
                 'estado_revision' => 'aprobado',
@@ -72,21 +92,20 @@ class PerfilAdminController extends Controller
             return true;
         });
 
-        return redirect()
-            ->back()
-            ->with($ok ? 'ok' : 'error', $ok ? 'Perfil aprobado.' : 'No se pudo aprobar (no existe).');
+        return back()->with($ok ? 'ok' : 'error', $ok ? 'Perfil aprobado.' : 'No se pudo aprobar (no existe).');
     }
 
     public function rechazar(Request $r, string $ci)
     {
-        $adminId = auth()->id();
+        // Guard explícito de admin (con fallback)
+        $adminId = auth('admin')->id() ?? auth()->id();
         $ci = preg_replace('/\D/', '', $ci);
 
         $ok = DB::transaction(function () use ($ci, $adminId) {
             $row = DB::table('usuarios_perfil')->lockForUpdate()->where('ci_usuario', $ci)->first();
             if (!$row) return false;
 
-            if (strtolower($row->estado_revision) === 'rechazado') return true;
+            if (strtolower((string)$row->estado_revision) === 'rechazado') return true;
 
             DB::table('usuarios_perfil')->where('ci_usuario', $ci)->update([
                 'estado_revision' => 'rechazado',
@@ -98,8 +117,6 @@ class PerfilAdminController extends Controller
             return true;
         });
 
-        return redirect()
-            ->back()
-            ->with($ok ? 'ok' : 'error', $ok ? 'Perfil rechazado.' : 'No se pudo rechazar (no existe).');
+        return back()->with($ok ? 'ok' : 'error', $ok ? 'Perfil rechazado.' : 'No se pudo rechazar (no existe).');
     }
 }
