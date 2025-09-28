@@ -97,13 +97,17 @@
     <div class="bo-panel__title">Acciones</div>
     <div>
       @if($estado === 'pendiente')
+        {{-- APROBAR => PUT --}}
         <form method="POST" action="{{ route('admin.comprobantes.aprobar',$row->id) }}" style="margin:0 0 8px 0;">
           @csrf
+          @method('PUT')
           <button class="bo-btn" type="submit" style="width:100%;">Aprobar</button>
         </form>
 
+        {{-- RECHAZAR => PUT --}}
         <form method="POST" action="{{ route('admin.comprobantes.rechazar',$row->id) }}" style="margin:0;">
           @csrf
+          @method('PUT')
           <label class="bo-muted" for="nota">Motivo (opcional)</label>
           <textarea class="bo-input mb-2" id="nota" name="nota" rows="2" placeholder="Motivo del rechazo"></textarea>
           <button class="bo-btn bo-btn--ghost" type="submit" style="width:100%;">Rechazar</button>

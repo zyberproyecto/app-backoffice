@@ -11,8 +11,8 @@ class ComprobanteController extends Controller
 {
     public function index(Request $r)
     {
-        $estado = strtolower($r->query('estado', 'pendiente')); // pendiente|aprobado|rechazado|todos
-        $tipoUi = strtolower($r->query('tipo', 'todos'));       // inicial|mensual|compensatorio|todos
+        $estado = strtolower($r->query('estado', 'pendiente')); 
+        $tipoUi = strtolower($r->query('tipo', 'todos'));       
 
         $mapTipo = [
             'inicial'       => 'aporte_inicial',
@@ -27,14 +27,12 @@ class ComprobanteController extends Controller
 
         $q = DB::table('comprobantes');
 
-        // Filtro por estado (si no es 'todos')
+
         if (in_array($estado, ['pendiente','aprobado','rechazado'], true)) {
             $q->where('estado', $estado);
         }
 
-        // Filtro por tipo (si no es 'todos')
         if ($tipo !== 'todos') {
-            // soportar que en DB pueda haber quedado 'inicial' o 'aporte_inicial'
             if ($tipo === 'aporte_inicial') {
                 $q->whereIn($colTipo, ['inicial', 'aporte_inicial']);
             } else {
